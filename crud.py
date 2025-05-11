@@ -8,7 +8,7 @@ from sqlalchemy import cast, Date
 from datetime import date
 from typing import List, Optional
 import logging
-from . import models, schemas
+import models, schemas
 
 # Настройка логирования для вывода в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
