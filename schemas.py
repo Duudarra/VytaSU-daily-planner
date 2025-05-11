@@ -11,8 +11,7 @@ class ScheduleOut(BaseModel):
     name_teacher: str
     name_discipline: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class UserCreate(BaseModel):
     email: str
@@ -24,9 +23,7 @@ class UserOut(BaseModel):
     email: str
     name: str
     is_active: bool
-
-    class Config:
-        model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 class Token(BaseModel):
     access_token: str
@@ -45,6 +42,4 @@ class TaskCreate(TaskBase):
 
 class TaskOut(TaskBase):
     id: int
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
