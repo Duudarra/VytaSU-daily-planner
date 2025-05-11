@@ -6,3 +6,5 @@ xls2xlsx
 openpyxl
 requests
 apscheduler
+python-jose[cryptography]  # Для JWT
+passlib[bcrypt]           # Для хеширования паролей

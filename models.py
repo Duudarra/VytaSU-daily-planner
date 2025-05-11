@@ -1,10 +1,10 @@
-from sqlalchemy import String, Integer, Date
+from sqlalchemy import String, Integer, Date, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, AsyncSession, create_async_engine
 import asyncio
 import logging
 import os
-import datetime 
+import datetime
 
 # Настройка логирования в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -34,12 +34,21 @@ class Schedule(Base):
     __tablename__ = "schedules"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    date: Mapped[datetime.date] = mapped_column(Date, nullable=False)  # Изменено на Date
+    date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     time_lesson: Mapped[str] = mapped_column(String(50), nullable=False)
     cabinet_number: Mapped[str] = mapped_column(String(50), nullable=False)
     name_group: Mapped[str] = mapped_column(String(100), nullable=False)
     name_teacher: Mapped[str] = mapped_column(String(100), nullable=False)
     name_discipline: Mapped[str] = mapped_column(String(100), nullable=False)
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 async def async_main():
     max_retries = 5
@@ -48,7 +57,7 @@ async def async_main():
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("Успешно создана таблица schedules")
+            logger.info("Успешно созданы таблицы schedules и users")
             return
         except Exception as e:
             logger.error(f"Ошибка подключения к базе данных (попытка {attempt + 1}/{max_retries}): {str(e)}")

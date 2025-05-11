@@ -1,10 +1,12 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
-from models import Schedule
+from models import Schedule, User
+from schemas import UserCreate
 from schemas import ScheduleOut
+from security import get_password_hash
 from sqlalchemy import cast, Date
 from datetime import date
-from typing import List
+from typing import List, Optional
 import logging
 
 # Настройка логирования для вывода в stdout
@@ -58,3 +60,16 @@ async def delete_old_schedules(session: AsyncSession, cutoff_date: date):
     await session.execute(delete(Schedule).where(Schedule.date < cutoff_date))
     await session.commit()
     logger.info("Старые записи удалены")
+
+async def create_user(session: AsyncSession, user: UserCreate) -> User:
+    hashed_password = get_password_hash(user.password)
+    db_user = User(email=user.email, hashed_password=hashed_password, name=user.name)
+    session.add(db_user)
+    await session.commit()
+    await session.refresh(db_user)
+    return db_user
+
+async def get_user_by_email(session: AsyncSession, email: str) -> Optional[User]:
+    query = select(User).where(User.email == email)
+    result = await session.execute(query)
+    return result.scalars().first()

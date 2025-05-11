@@ -1,14 +1,15 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import AsyncSessionLocal
 import crud, schemas
-from datetime import date
+from datetime import date, timedelta
 from typing import List, AsyncGenerator
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pars import main as parser_main
 import asyncio
+from security import verify_password, create_access_token, decode_access_token
 
 # Настройка логирования в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,6 +27,63 @@ scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         yield session
+
+async def get_current_user(token: str, session: AsyncSession = Depends(get_session)) -> schemas.UserOut:
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    email: str = payload.get("sub")
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = await crud.get_user_by_email(session, email)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return schemas.UserOut.from_orm(user)
+
+@app.post(
+    "/register/",
+    response_model=schemas.UserOut,
+    summary="Регистрация нового пользователя",
+    description="Создает нового пользователя с указанным email, паролем и именем."
+)
+async def register_user(user: schemas.UserCreate, session: AsyncSession = Depends(get_session)):
+    logger.info(f"Регистрация пользователя: email={user.email}")
+    existing_user = await crud.get_user_by_email(session, user.email)
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    db_user = await crud.create_user(session, user)
+    logger.info(f"Пользователь зарегистрирован: id={db_user.id}")
+    return db_user
+
+@app.post(
+    "/login/",
+    response_model=schemas.Token,
+    summary="Вход пользователя",
+    description="Аутентифицирует пользователя и возвращает JWT-токен."
+)
+async def login_user(email: str, password: str, session: AsyncSession = Depends(get_session)):
+    logger.info(f"Попытка входа: email={email}")
+    user = await crud.get_user_by_email(session, email)
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    access_token_expires = timedelta(minutes=30)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    logger.info(f"Успешный вход: email={email}")
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get(
     "/schedule/by-date-group/",
@@ -107,12 +165,12 @@ async def delete_old_schedule(before: date, session: AsyncSession = Depends(get_
 @app.on_event("startup")
 async def startup_event():
     logger.info("Запуск приложения и планировщика")
-    # Запускаем парсер при старте для немедленного обновления
+    # Закомментирован запуск парсера при старте
     # asyncio.create_task(parser_main()) пока отключен
-    # Планируем парсер на 16:00 MSK ежедневно
+    # Планируем парсер на 6:00 MSK ежедневно
     scheduler.add_job(
         parser_main,
-        trigger=CronTrigger(hour=6, minute=00, timezone="Europe/Moscow"),
+        trigger=CronTrigger(hour=6, minute=0, timezone="Europe/Moscow"),
         id="daily_parser",
         replace_existing=True
     )
