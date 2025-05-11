@@ -5,3 +5,4 @@ asyncpg==0.29.0
 xls2xlsx
 openpyxl
 requests
+apscheduler
