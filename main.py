@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import AsyncSessionLocal
 from fastapi.security import OAuth2PasswordBearer
 import crud, schemas
+from models import User
 from datetime import date, timedelta
 from typing import List, AsyncGenerator
 import logging
@@ -227,6 +228,19 @@ async def startup_event():
         replace_existing=True
     )
     scheduler.start()
+
+@app.get(
+    "/me/",
+    response_model=schemas.UserOut,
+    summary="Получить данные текущего пользователя",
+    description="Возвращает данные текущего пользователя на основе JWT-токена."
+)
+async def get_current_user_data(
+    current_user: schemas.UserOut = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос данных пользователя: user_id={current_user.id}")
+    return current_user
 
 @app.on_event("shutdown")
 async def shutdown_event():
