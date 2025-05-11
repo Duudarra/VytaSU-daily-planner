@@ -20,7 +20,7 @@ async def delete_outdated_schedules(session):
     
     # Удаление записей старше 2 недель за один запрос
     result = await session.execute(
-        delete(Schedule).where(Schedule.date < two_weeks_ago.isoformat())
+        delete(Schedule).where(Schedule.date < two_weeks_ago)
     )
     await session.commit()
     logger.info(f"Удалено {result.rowcount} устаревших записей")
@@ -38,13 +38,16 @@ async def update_schedule(
     empty=False,
     many=False,
 ):
-    # Конвертация даты в формат YYYY-MM-DD, если она в формате dd.mm.yy
-    try:
-        if len(date) == 8 and '.' in date:  # dd.mm.yy
-            date_obj = datetime.datetime.strptime(date, "%d.%m.%y")
-            date = date_obj.strftime("%Y-%m-%d")
-    except ValueError:
-        pass  # Предполагаем, что дата уже в формате YYYY-MM-DD
+    # Конвертация даты в datetime.date, если она в формате строки
+    if isinstance(date, str):
+        try:
+            if len(date) == 8 and '.' in date:  # dd.mm.yy
+                date = datetime.datetime.strptime(date, "%d.%m.%y").date()
+            else:  # Предполагаем YYYY-MM-DD
+                date = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError as e:
+            logger.error(f"Ошибка формата даты: {date}, {e}")
+            raise ValueError(f"Неверный формат даты: {date}")
 
     logger.info(f"Обновление расписания: date={date}, time_lesson={time_lesson}, cabinet_number={cabinet_number}, empty={empty}, many={many}")
     

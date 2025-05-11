@@ -1,16 +1,17 @@
-from sqlalchemy import String, Integer
+from sqlalchemy import String, Integer, Date
 from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, AsyncSession, create_async_engine
 import asyncio
 import logging
 import os
+import datetime 
 
 # Настройка логирования в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Получение DATABASE_URL из переменной окружения
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://schedule_db_w0cj_user:UhPODon3t3vQyJUspZqlsfBQIXw3OrUE@dpg-d0g75badbo4c73b3aae0-a.oregon-postgres.render.com/schedule_db_w0cj")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:1234@localhost:5432/schedule_db")
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
@@ -33,7 +34,7 @@ class Schedule(Base):
     __tablename__ = "schedules"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    date: Mapped[str] = mapped_column(String(10), nullable=False)  # Формат YYYY-MM-DD
+    date: Mapped[datetime.date] = mapped_column(Date, nullable=False)  # Изменено на Date
     time_lesson: Mapped[str] = mapped_column(String(50), nullable=False)
     cabinet_number: Mapped[str] = mapped_column(String(50), nullable=False)
     name_group: Mapped[str] = mapped_column(String(100), nullable=False)
