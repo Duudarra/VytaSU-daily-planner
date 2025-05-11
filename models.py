@@ -1,5 +1,5 @@
-from sqlalchemy import String, Integer, Date, Boolean
-from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase
+from sqlalchemy import String, Integer, Date, Boolean, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, AsyncSession, create_async_engine
 import asyncio
 import logging
@@ -49,6 +49,20 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="user")
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(100), nullable=False)
+    date: Mapped[str] = mapped_column(String(50), nullable=False)  # ISO 8601 или другой формат
+    time: Mapped[str] = mapped_column(String(50), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    priority: Mapped[str] = mapped_column(String(50), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+
+    user: Mapped["User"] = relationship("User", back_populates="tasks")
 
 async def async_main():
     max_retries = 5
@@ -57,7 +71,7 @@ async def async_main():
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("Успешно созданы таблицы schedules и users")
+            logger.info("Успешно созданы таблицы schedules, users и tasks")
             return
         except Exception as e:
             logger.error(f"Ошибка подключения к базе данных (попытка {attempt + 1}/{max_retries}): {str(e)}")

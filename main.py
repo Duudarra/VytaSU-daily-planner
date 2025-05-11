@@ -52,6 +52,54 @@ async def get_current_user(token: str, session: AsyncSession = Depends(get_sessi
         )
     return schemas.UserOut.from_orm(user)
 
+# Эндпоинты для задач
+@app.post(
+    "/tasks/",
+    response_model=schemas.TaskOut,
+    summary="Создать задачу",
+    description="Создает новую задачу для текущего пользователя."
+)
+async def create_task(
+    task: schemas.TaskCreate,
+    current_user: schemas.UserOut = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Создание задачи для пользователя: user_id={current_user.id}")
+    db_task = await crud.create_task(session, task, current_user.id)
+    return db_task
+
+@app.get(
+    "/tasks/",
+    response_model=List[schemas.TaskOut],
+    summary="Получить задачи пользователя",
+    description="Возвращает список задач текущего пользователя."
+)
+async def get_tasks(
+    current_user: schemas.UserOut = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос задач для пользователя: user_id={current_user.id}")
+    tasks = await crud.get_tasks_by_user(session, current_user.id)
+    return tasks
+
+@app.delete(
+    "/tasks/{task_id}/",
+    status_code=204,
+    summary="Удалить задачу",
+    description="Удаляет задачу по её ID, если она принадлежит текущему пользователю."
+)
+async def delete_task(
+    task_id: int,
+    current_user: schemas.UserOut = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Удаление задачи: task_id={task_id}, user_id={current_user.id}")
+    task = await crud.delete_task(session, task_id, current_user.id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found or not authorized")
+    return
+
+# Существующие эндпоинты
 @app.post(
     "/register/",
     response_model=schemas.UserOut,

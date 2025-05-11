@@ -8,6 +8,7 @@ from sqlalchemy import cast, Date
 from datetime import date
 from typing import List, Optional
 import logging
+from . import models, schemas
 
 # Настройка логирования для вывода в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -73,3 +74,32 @@ async def get_user_by_email(session: AsyncSession, email: str) -> Optional[User]
     query = select(User).where(User.email == email)
     result = await session.execute(query)
     return result.scalars().first()
+
+async def create_task(session: AsyncSession, task: schemas.TaskCreate, user_id: int) -> models.Task:
+    db_task = models.Task(
+        title=task.title,
+        date=task.date,
+        time=task.time,
+        category=task.category,
+        priority=task.priority,
+        user_id=user_id
+    )
+    session.add(db_task)
+    await session.commit()
+    await session.refresh(db_task)
+    return db_task
+
+async def get_tasks_by_user(session: AsyncSession, user_id: int) -> list[models.Task]:
+    result = await session.execute(select(models.Task).filter(models.Task.user_id == user_id))
+    return result.scalars().all()
+
+async def delete_task(session: AsyncSession, task_id: int, user_id: int) -> None:
+    result = await session.execute(
+        select(models.Task).filter(models.Task.id == task_id, models.Task.user_id == user_id)
+    )
+    task = result.scalars().first()
+    if task is None:
+        return None
+    await session.delete(task)
+    await session.commit()
+    return task

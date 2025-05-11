@@ -31,3 +31,20 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class TaskBase(BaseModel):
+    title: str
+    date: str
+    time: str
+    category: str
+    priority: str
+    user_id: int
+
+class TaskCreate(TaskBase):
+    pass
+
+class TaskOut(TaskBase):
+    id: int
+
+    class Config:
+        orm_mode = True
