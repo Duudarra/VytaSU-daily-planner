@@ -2,3 +2,6 @@ fastapi==0.115.0
 uvicorn==0.30.6
 sqlalchemy==2.0.35
 asyncpg==0.29.0
+xls2xlsx
+openpyxl
+requests
