@@ -1,13 +1,13 @@
 from pydantic import BaseModel
-from datetime import date, time, datetime
+from datetime import date
 
 class ScheduleBase(BaseModel):
-    date: date  # Дата, например, '2025-05-13'
-    name_group: str  # Группа, например, '101' или 'ИЭ-2025'
-    time_lesson: str  # Изменено с time
-    name_discipline: str  # Изменено с subject
-    name_teacher: str  # Изменено с teacher
-    cabinet_number: str  # Изменено с cabinet
+    date: date
+    name_group: str
+    time_lesson: str
+    name_discipline: str
+    name_teacher: str
+    cabinet_number: str
 
 class ScheduleCreate(ScheduleBase):
     pass
@@ -16,4 +16,4 @@ class ScheduleOut(ScheduleBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
