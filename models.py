@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Получение DATABASE_URL из переменной окружения
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:1234@localhost:5432/schedule_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://schedule_db_w0cj_user:UhPODon3t3vQyJUspZqlsfBQIXw3OrUE@dpg-d0g75badbo4c73b3aae0-a.oregon-postgres.render.com/schedule_db_w0cj")
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
