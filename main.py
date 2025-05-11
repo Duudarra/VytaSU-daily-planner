@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import AsyncSessionLocal
+from fastapi.security import OAuth2PasswordBearer
 import crud, schemas
 from datetime import date, timedelta
 from typing import List, AsyncGenerator
@@ -24,11 +25,13 @@ app = FastAPI(
 # Инициализация планировщика
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         yield session
 
-async def get_current_user(token: str, session: AsyncSession = Depends(get_session)) -> schemas.UserOut:
+async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)) -> schemas.UserOut:
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(
@@ -65,6 +68,7 @@ async def create_task(
     session: AsyncSession = Depends(get_session)
 ):
     logger.info(f"Создание задачи для пользователя: user_id={current_user.id}")
+    # Передаем user_id из current_user, а не из тела запроса
     db_task = await crud.create_task(session, task, current_user.id)
     return db_task
 
