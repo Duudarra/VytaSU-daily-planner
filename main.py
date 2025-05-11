@@ -112,7 +112,7 @@ async def startup_event():
     # Планируем парсер на 16:00 MSK ежедневно
     scheduler.add_job(
         parser_main,
-        trigger=CronTrigger(hour=15, minute=35, timezone="Europe/Moscow"),
+        trigger=CronTrigger(hour=6, minute=00, timezone="Europe/Moscow"),
         id="daily_parser",
         replace_existing=True
     )
