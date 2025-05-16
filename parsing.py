@@ -7,6 +7,9 @@ import asyncio
 import logging
 import traceback
 import tempfile
+import vk_api
+import pandas as pd
+import re
 
 from dbrequests import delete_outdated_schedules, update_schedule
 
@@ -28,6 +31,9 @@ user_agent = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 YaBrowser/24.1.0.0 Safari/537.36"
 }
 url_site = "https://www.vyatsu.ru/studentu-1/spravochnaya-informatsiya/zanyatost-auditoriy.html"
+
+VK_TOKEN = "vk1.a.GT1bhyYCNuikwpgwwnS2BeE-UltutlTdSShHNV6L2iDfeg7fLa7cGewT6f4gVQnRy2PKf65Vcu-cKUWhU3neTsVB9Ap5SyvKtuENOxbAm9oT7EQFqrdgmLG6M3ttU-DyDWnwt5Erm6QhUQqJB-nYPi9t6KSrIynIWw99MCZsj7mZbvMb_fZeQr0I-97dz-Ylekzi6gi8iMnyA2t3RMtj3w"  # Замени на актуальный токен
+GROUP_ID = "-85060840"
 
 async def get_content(url):
     logger.info(f"Запрос контента с {url}")
@@ -90,8 +96,8 @@ async def parsing_url(url: str) -> None:
             os.remove(path)
             logger.info(f"Удален временный файл {path}")
 
-            wookbook = load_workbook(xlsx_path)
-            worksheet = wookbook.active
+            workbook = load_workbook(xlsx_path)
+            worksheet = workbook.active
 
             for i in range(3, worksheet.max_column):
                 cabinet_number: str = worksheet.cell(row=2, column=i).value
@@ -187,16 +193,217 @@ async def parsing_url(url: str) -> None:
         logger.error(f"Ошибка обработки URL {url}: {e}")
         logger.error(traceback.format_exc())
 
-async def start_parsing_xlsx():
+async def download_vk_file(url, filename):
+    response = requests.get(url)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
+        temp_file.write(response.content)
+        temp_path = temp_file.name
+    logger.info(f"Скачан файл {filename} в {temp_path}")
+    return temp_path
+
+async def parse_vk_schedule_async():
+    try:
+        vk_session = vk_api.VkApi(token=VK_TOKEN, api_version="5.131")
+        vk = vk_session.get_api()
+
+        posts = vk.wall.get(owner_id=GROUP_ID, count=50, filter="all")
+        items = posts.get("items", [])
+
+        for post in items:
+            if "расписание" not in post.get("text", "").lower():
+                continue
+
+            post_date = datetime.fromtimestamp(post["date"]).strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"Обработка поста от {post_date}, ID: {post['id']}")
+
+            attachments = post.get("attachments", [])
+            if not attachments:
+                logger.info("В этом посте нет прикреплённых файлов.")
+                continue
+
+            for attachment in attachments:
+                if attachment["type"] == "doc":
+                    doc = attachment["doc"]
+                    if doc["ext"] == "xlsx":
+                        file_name = doc["title"]
+                        file_url = doc["url"]
+
+                        logger.info(f"Найден файл: {file_name}")
+                        downloaded_file = await download_vk_file(file_url, file_name)
+
+                        try:
+                            schedules = parse_schedule_structured(downloaded_file, file_name)
+                            logger.info(f"Обработано {len(schedules)} записей из {file_name}")
+
+                            for entry in schedules:
+                                # Сохранение в базу данных
+                                await update_schedule(
+                                    entry["date"],
+                                    entry["time"],
+                                    entry["auditorium"],
+                                    [entry["group"]],
+                                    [entry["teacher"]],
+                                    [entry["discipline"]],
+                                )
+
+                            logger.info(f"РАСПИСАНИЕ из {file_name} сохранено в базу данных!")
+                        finally:
+                            if os.path.exists(downloaded_file):
+                                os.remove(downloaded_file)
+                                logger.info(f"Удален временный файл {downloaded_file}")
+                    else:
+                        logger.info(f"Файл {doc['title']} — не .xlsx, пропущен.")
+                else:
+                    logger.info("Не документ, пропущен.")
+    except Exception as e:
+        logger.error(f"Ошибка при парсинге VK: {e}")
+        logger.error(traceback.format_exc())
+
+async def parse_schedule_structured(file_path, file_name):
+    """
+    Парсинг Excel-файла расписания с повторяющимися блоками дней/времени и групп.
+    Динамически устанавливает диапазон дат на основе имени файла (например, 12.05-17.05 или 19.05-24.05).
+    Исключает записи до текущего дня.
+    Включает информацию об аудиториях.
+    Возвращает список словарей с извлечённой информацией.
+    """
+    try:
+        # Извлечение диапазона дат из имени файла (например, "12.05-17.05" или "19.05-24.05")
+        date_match = re.search(r'(\d{2}\.\d{2})-(\d{2}\.\d{2})', file_name)
+        if date_match:
+            start_date_str, end_date_str = date_match.groups()
+            start_date = datetime.datetime.strptime(f"{start_date_str}.2025", "%d.%m.%Y").date()
+            end_date = datetime.datetime.strptime(f"{end_date_str}.2025", "%d.%m.%Y").date()
+        else:
+            raise ValueError(f"Не удалось извлечь диапазон дат из {file_name}")
+
+        # Текущая дата
+        current_date = datetime.datetime.now().date()
+
+        # Фильтрация дат, исключая записи до текущего дня
+        if start_date < current_date:
+            start_date = current_date
+
+        # Чтение всех листов из Excel-файла
+        with pd.ExcelFile(file_path) as xl:
+            schedules = []
+
+            for sheet_name in xl.sheet_names:
+                df = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
+
+                # Поиск строки с "День недели" для определения структуры
+                header_row = None
+                for idx, row in df.iterrows():
+                    if any(isinstance(val, str) and 'День недели' in val for val in row):
+                        header_row = idx
+                        break
+
+                if header_row is None:
+                    logger.info(f"Пропуск листа {sheet_name}: не найдена строка 'День недели'")
+                    continue
+
+                # Определение столбцов для дней и времени (повторяющийся шаблон)
+                day_cols = []
+                time_cols = []
+                for col in df.columns:
+                    val = df.iloc[header_row, col]
+                    if isinstance(val, str) and 'День недели' in val:
+                        day_cols.append(col)
+                        time_cols.append(col + 1)  # Время находится в следующем столбце после дня
+
+                if not day_cols:
+                    logger.info(f"Пропуск листа {sheet_name}: не найдены столбцы дней")
+                    continue
+
+                # Обработка каждого блока дней/времени
+                for block_idx, day_col in enumerate(day_cols):
+                    time_col = time_cols[block_idx]
+                    # Каждый блок содержит 3 группы, по 4 столбца на группу (дисциплина, тип, преподаватель, аудитория)
+                    group_start_col = day_col + 2
+                    group_cols = [(group_start_col + i * 4) for i in range(3)]  # 3 группы, по 4 столбца каждая
+
+                    # Проверка корректности столбцов групп
+                    group_cols = [col for col in group_cols if col < df.shape[1]]
+                    if not group_cols:
+                        continue
+
+                    # Извлечение названий групп (строка выше заголовка, обычно на строку выше)
+                    group_names = []
+                    for col in group_cols:
+                        group_val = df.iloc[header_row - 1, col]
+                        if isinstance(group_val, str) and 'Группа' in group_val:
+                            group_name = group_val.replace("Группа", "").strip()
+                        else:
+                            group_name = "Unknown"
+                        group_names.append(group_name)
+
+                    # Обработка строк для этого блока
+                    current_date = None
+                    for idx in range(header_row + 1, df.shape[0]):
+                        # Захват даты
+                        day_val = str(df.iloc[idx, day_col]).strip()
+                        if day_val and 'nan' not in day_val.lower():
+                            try:
+                                date_match = re.search(r'(\d{1,2}\.\d{2})', day_val)
+                                if date_match:
+                                    date_str = date_match.group(1)
+                                    current_date = datetime.datetime.strptime(f"{date_str}.2025", "%d.%m.%Y").date()
+                            except ValueError:
+                                current_date = None
+
+                        # Фильтрация дат вне диапазона и до текущего дня
+                        if current_date and (current_date < start_date or current_date < current_date):
+                            continue
+
+                        # Получение времени
+                        time_val = str(df.iloc[idx, time_col]).strip()
+                        if 'nan' in time_val.lower() or not time_val:
+                            continue
+
+                        # Проверка формата времени
+                        if not re.match(r'^\d{1,2}\.\d{2}-\d{1,2}\.\d{2}$', time_val):
+                            time_val = "Unknown"
+
+                        # Обработка каждой группы в этом блоке
+                        for group_idx, group_col in enumerate(group_cols):
+                            discipline = str(df.iloc[idx, group_col]).strip()
+                            teacher = str(df.iloc[idx, group_col + 2]).strip()
+                            auditorium = str(df.iloc[idx, group_col + 3]).strip()
+
+                            if 'nan' in [discipline, teacher, auditorium] or not all([discipline, teacher, auditorium]):
+                                continue
+
+                            if current_date:
+                                schedules.append({
+                                    "group": group_names[group_idx],
+                                    "date": current_date.strftime("%Y-%m-%d"),
+                                    "time": time_val,
+                                    "discipline": discipline,
+                                    "teacher": teacher,
+                                    "auditorium": auditorium
+                                })
+
+        return schedules
+
+    except Exception as e:
+        logger.error(f"Ошибка обработки файла {file_path}: {e}")
+        return []
+
+async def start_parsing():
     await delete_outdated_schedules()
     try:
+        # Парсинг расписания университета
+        logger.info("Начало парсинга расписания университета")
         response = await get_content(url_site)
         urls = await get_urls(response)
         for url in urls:
             await parsing_url(url)
+        logger.info("Парсинг расписания университета завершен")
+
+        # Парсинг расписания колледжа из VK
+        logger.info("Начало парсинга расписания колледжа из VK")
+        await parse_vk_schedule_async()
+        logger.info("Парсинг расписания колледжа из VK завершен")
     except Exception as e:
         logger.error(f"Ошибка парсинга: {e}")
         logger.error(traceback.format_exc())
-
-async def start_parsing():
-    await start_parsing_xlsx()

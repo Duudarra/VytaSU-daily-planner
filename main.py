@@ -23,7 +23,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Инициализация планировщика
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -104,7 +103,6 @@ async def delete_task(
         raise HTTPException(status_code=404, detail="Task not found or not authorized")
     return
 
-# Существующие эндпоинты
 @app.post(
     "/register/",
     response_model=schemas.UserOut,
