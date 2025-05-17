@@ -358,7 +358,16 @@ async def parse_schedule_structured(file_path, file_name):
                             continue
 
                         # Валидация формата времени
-                        if not re.match(r'^\d{1,2}\.\d{2}-\d{1,2}\.\d{2}$', time_val):
+                        time_val = str(df.iloc[idx, time_col]).strip()
+                        if 'nan' in time_val.lower() or not time_val:
+                            continue
+
+                        # Проверка формата времени (10.00-11.30) или преобразование из "1 пара"
+                        if re.match(r'^\d{1,2}\.\d{2}-\d{1,2}\.\d{2}$', time_val):
+                            pass  # Формат уже корректный
+                        elif time_val in time_from_pair:
+                            time_val = time_from_pair[time_val]
+                        else:
                             logger.warning(f"Некорректный формат времени: {time_val}, пропуск")
                             continue
 
@@ -368,29 +377,46 @@ async def parse_schedule_structured(file_path, file_name):
                             name_teacher = str(df.iloc[idx, group_col + 2]).strip()
                             cabinet_number = str(df.iloc[idx, group_col + 3]).strip()
 
-                            # Валидация данных
-                            if 'nan' in [name_discipline, name_teacher, cabinet_number] or not all([name_discipline, name_teacher, cabinet_number]):
-                                continue
-
-                            # Валидация номера аудитории (например, '5-306')
-                            if not re.match(r'^\d+-\d+$', cabinet_number):
-                                logger.warning(f"Некорректный номер аудитории: {cabinet_number}, пропуск")
-                                continue
-
-                            # Обрезка длинного названия дисциплины (для совместимости с VARCHAR(100), если не увеличен)
-                            if len(name_discipline) > 100:
-                                logger.warning(f"Обрезано название дисциплины: {name_discipline[:100]}...")
-                                name_discipline = name_discipline[:100]
-
-                            if current_date:
-                                schedules.append({
-                                    "name_group": group_names[group_idx],
-                                    "date": current_date.strftime("%Y-%m-%d"),
-                                    "time_lesson": time_val,
-                                    "name_discipline": name_discipline,
-                                    "name_teacher": name_teacher,
-                                    "cabinet_number": cabinet_number
-                                })
+                            # Проверка на множественные занятия
+                            if '\n' in name_discipline:
+                                disciplines = name_discipline.split('\n')
+                                teachers = name_teacher.split('\n') if '\n' in name_teacher else [name_teacher] * len(disciplines)
+                                for d, t in zip(disciplines, teachers):
+                                    if 'nan' in [d, t, cabinet_number] or not all([d, t, cabinet_number]):
+                                        continue
+                                    if not re.match(r'^\d+-\d+$', cabinet_number):
+                                        logger.warning(f"Некорректный номер аудитории: {cabinet_number}, пропуск")
+                                        continue
+                                    if len(d) > 255:
+                                        logger.warning(f"Обрезано название дисциплины: {d[:255]}...")
+                                        d = d[:255]
+                                    if current_date:
+                                        schedules.append({
+                                            "name_group": group_names[group_idx],
+                                            "date": current_date.strftime("%Y-%m-%d"),
+                                            "time_lesson": time_val,
+                                            "name_discipline": d,
+                                            "name_teacher": t,
+                                            "cabinet_number": cabinet_number
+                                        })
+                            else:
+                                if 'nan' in [name_discipline, name_teacher, cabinet_number] or not all([name_discipline, name_teacher, cabinet_number]):
+                                    continue
+                                if not re.match(r'^\d+-\d+$', cabinet_number):
+                                    logger.warning(f"Некорректный номер аудитории: {cabinet_number}, пропуск")
+                                    continue
+                                if len(name_discipline) > 255:
+                                    logger.warning(f"Обрезано название дисциплины: {name_discipline[:255]}...")
+                                    name_discipline = name_discipline[:255]
+                                if current_date:
+                                    schedules.append({
+                                        "name_group": group_names[group_idx],
+                                        "date": current_date.strftime("%Y-%m-%d"),
+                                        "time_lesson": time_val,
+                                        "name_discipline": name_discipline,
+                                        "name_teacher": name_teacher,
+                                        "cabinet_number": cabinet_number
+                                    })
 
         return schedules
 
