@@ -98,6 +98,7 @@ async def get_teacher_urls(response):
         
         for link in links:
             url = "https://www.vyatsu.ru" + link['href']
+            teacher_name = link.text.strip()  # Извлекаем имя преподавателя из текста ссылки
             
             try:
                 # Парсим дату начала из имени файла для фильтрации
@@ -112,8 +113,8 @@ async def get_teacher_urls(response):
                     current_date = datetime.date.today()
                     # Отбираем только актуальные файлы
                     if current_date < start_date and (start_date - current_date).days < 180:
-                        list_urls.append((url, kafedra_name))
-                        logger.info(f"Найдена ссылка кафедры: {url}, кафедра: {kafedra_name}")
+                        list_urls.append((url, teacher_name, kafedra_name))
+                        logger.info(f"Найдена ссылка кафедры: {url}, преподаватель: {teacher_name}, кафедра: {kafedra_name}")
             except Exception as e:
                 logger.error(f"Ошибка обработки ссылки {url}: {e}")
     
@@ -259,10 +260,18 @@ async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> N
                 time_lesson = worksheet.cell(row=row, column=3).value
                 name_group = worksheet.cell(row=row, column=4).value
                 name_discipline = worksheet.cell(row=row, column=5).value
+                # Убрали перезапись teacher_name
+                # teacher_name = worksheet.cell(row=row, column=6).value
                 cabinet_number = worksheet.cell(row=row, column=7).value
 
-                if not all([date, time_lesson, name_group, name_discipline, cabinet_number]):
+                if not all([date, time_lesson, name_group, name_discipline, teacher_name, cabinet_number]):
                     continue
+
+                # Приводим к строкам и обрезаем длину
+                teacher_name = str(teacher_name).strip()
+                if len(teacher_name) > 255:
+                    logger.warning(f"Обрезано имя преподавателя: {teacher_name[:255]}...")
+                    teacher_name = teacher_name[:255]
 
                 date = str(date).strip()[-8:]
                 try:
@@ -288,9 +297,6 @@ async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> N
                 if len(name_discipline) > 255:
                     logger.warning(f"Обрезано название дисциплины: {name_discipline[:255]}...")
                     name_discipline = name_discipline[:255]
-                if len(teacher_name) > 255:
-                    logger.warning(f"Обрезано имя преподавателя: {teacher_name[:255]}...")
-                    teacher_name = teacher_name[:255]
                 if len(cabinet_number) > 50:
                     logger.warning(f"Обрезано название аудитории: {cabinet_number[:50]}...")
                     cabinet_number = cabinet_number[:50]
@@ -526,11 +532,10 @@ async def parse_schedule_structured(file_path, file_name):
 async def start_parsing():
     await delete_outdated_schedules()
     try:
-
         logger.info("Начало парсинга расписания преподавателей")
         response = await get_content(url_teacher_site)
         teacher_urls = await get_teacher_urls(response)
-        for url, teacher_name, department in teacher_urls:
+        for url, teacher_name, department in teacher_urls:  # Обновлено
             await parsing_teacher_url(url, teacher_name, department)
         logger.info("Парсинг расписания преподавателей завершен")
 
