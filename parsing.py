@@ -62,7 +62,7 @@ async def get_urls(response):
                     day=int(date_str[-8:-6]),
                 )
                 current_date = datetime.date.today()
-                if current_date < last_date and (last_date - current_date).days < 180:  # Увеличено до 180 дней
+                if current_date < last_date and (last_date - current_date).days < 180:
                     list_urls.append(url)
                     logger.info(f"Найдена актуальная ссылка: {url}")
             except Exception as e:
@@ -213,7 +213,7 @@ async def parse_vk_schedule_async():
             if "расписание" not in post.get("text", "").lower():
                 continue
 
-            post_date = datetime.fromtimestamp(post["date"]).strftime("%Y-%m-%d %H:%M:%S")
+            post_date = datetime.datetime.fromtimestamp(post["date"]).strftime("%Y-%m-%d %H:%M:%S")
             logger.info(f"Обработка поста от {post_date}, ID: {post['id']}")
 
             attachments = post.get("attachments", [])
@@ -232,18 +232,18 @@ async def parse_vk_schedule_async():
                         downloaded_file = await download_vk_file(file_url, file_name)
 
                         try:
-                            schedules = parse_schedule_structured(downloaded_file, file_name)
+                            schedules = await parse_schedule_structured(downloaded_file, file_name)
                             logger.info(f"Обработано {len(schedules)} записей из {file_name}")
 
                             for entry in schedules:
                                 # Сохранение в базу данных
                                 await update_schedule(
                                     entry["date"],
-                                    entry["time"],
-                                    entry["auditorium"],
-                                    [entry["group"]],
-                                    [entry["teacher"]],
-                                    [entry["discipline"]],
+                                    entry["time_lesson"],
+                                    entry["cabinet_number"],
+                                    [entry["name_group"]],
+                                    [entry["name_teacher"]],
+                                    [entry["name_discipline"]],
                                 )
 
                             logger.info(f"РАСПИСАНИЕ из {file_name} сохранено в базу данных!")
@@ -264,11 +264,11 @@ async def parse_schedule_structured(file_path, file_name):
     Парсинг Excel-файла расписания с повторяющимися блоками дней/времени и групп.
     Динамически устанавливает диапазон дат на основе имени файла (например, 12.05-17.05 или 19.05-24.05).
     Исключает записи до текущего дня.
-    Включает информацию об аудиториях.
+    Включает информацию об аудиториях с правильными названиями полей для базы данных.
     Возвращает список словарей с извлечённой информацией.
     """
     try:
-        # Извлечение диапазона дат из имени файла (например, "12.05-17.05" или "19.05-24.05")
+        # Извлечение диапазона дат из имени файла
         date_match = re.search(r'(\d{2}\.\d{2})-(\d{2}\.\d{2})', file_name)
         if date_match:
             start_date_str, end_date_str = date_match.groups()
@@ -302,14 +302,14 @@ async def parse_schedule_structured(file_path, file_name):
                     logger.info(f"Пропуск листа {sheet_name}: не найдена строка 'День недели'")
                     continue
 
-                # Определение столбцов для дней и времени (повторяющийся шаблон)
+                # Определение столбцов для дней и времени
                 day_cols = []
                 time_cols = []
                 for col in df.columns:
                     val = df.iloc[header_row, col]
                     if isinstance(val, str) and 'День недели' in val:
                         day_cols.append(col)
-                        time_cols.append(col + 1)  # Время находится в следующем столбце после дня
+                        time_cols.append(col + 1)  # Время в следующем столбце
 
                 if not day_cols:
                     logger.info(f"Пропуск листа {sheet_name}: не найдены столбцы дней")
@@ -318,16 +318,13 @@ async def parse_schedule_structured(file_path, file_name):
                 # Обработка каждого блока дней/времени
                 for block_idx, day_col in enumerate(day_cols):
                     time_col = time_cols[block_idx]
-                    # Каждый блок содержит 3 группы, по 4 столбца на группу (дисциплина, тип, преподаватель, аудитория)
                     group_start_col = day_col + 2
-                    group_cols = [(group_start_col + i * 4) for i in range(3)]  # 3 группы, по 4 столбца каждая
-
-                    # Проверка корректности столбцов групп
+                    group_cols = [(group_start_col + i * 4) for i in range(3)]
                     group_cols = [col for col in group_cols if col < df.shape[1]]
                     if not group_cols:
                         continue
 
-                    # Извлечение названий групп (строка выше заголовка, обычно на строку выше)
+                    # Извлечение названий групп
                     group_names = []
                     for col in group_cols:
                         group_val = df.iloc[header_row - 1, col]
@@ -352,7 +349,7 @@ async def parse_schedule_structured(file_path, file_name):
                                 current_date = None
 
                         # Фильтрация дат вне диапазона и до текущего дня
-                        if current_date and (current_date < start_date or current_date < current_date):
+                        if current_date and (current_date < start_date or current_date > end_date or current_date < current_date):
                             continue
 
                         # Получение времени
@@ -360,27 +357,39 @@ async def parse_schedule_structured(file_path, file_name):
                         if 'nan' in time_val.lower() or not time_val:
                             continue
 
-                        # Проверка формата времени
+                        # Валидация формата времени
                         if not re.match(r'^\d{1,2}\.\d{2}-\d{1,2}\.\d{2}$', time_val):
-                            time_val = "Unknown"
+                            logger.warning(f"Некорректный формат времени: {time_val}, пропуск")
+                            continue
 
                         # Обработка каждой группы в этом блоке
                         for group_idx, group_col in enumerate(group_cols):
-                            discipline = str(df.iloc[idx, group_col]).strip()
-                            teacher = str(df.iloc[idx, group_col + 2]).strip()
-                            auditorium = str(df.iloc[idx, group_col + 3]).strip()
+                            name_discipline = str(df.iloc[idx, group_col]).strip()
+                            name_teacher = str(df.iloc[idx, group_col + 2]).strip()
+                            cabinet_number = str(df.iloc[idx, group_col + 3]).strip()
 
-                            if 'nan' in [discipline, teacher, auditorium] or not all([discipline, teacher, auditorium]):
+                            # Валидация данных
+                            if 'nan' in [name_discipline, name_teacher, cabinet_number] or not all([name_discipline, name_teacher, cabinet_number]):
                                 continue
+
+                            # Валидация номера аудитории (например, '5-306')
+                            if not re.match(r'^\d+-\d+$', cabinet_number):
+                                logger.warning(f"Некорректный номер аудитории: {cabinet_number}, пропуск")
+                                continue
+
+                            # Обрезка длинного названия дисциплины (для совместимости с VARCHAR(100), если не увеличен)
+                            if len(name_discipline) > 100:
+                                logger.warning(f"Обрезано название дисциплины: {name_discipline[:100]}...")
+                                name_discipline = name_discipline[:100]
 
                             if current_date:
                                 schedules.append({
-                                    "group": group_names[group_idx],
+                                    "name_group": group_names[group_idx],
                                     "date": current_date.strftime("%Y-%m-%d"),
-                                    "time": time_val,
-                                    "discipline": discipline,
-                                    "teacher": teacher,
-                                    "auditorium": auditorium
+                                    "time_lesson": time_val,
+                                    "name_discipline": name_discipline,
+                                    "name_teacher": name_teacher,
+                                    "cabinet_number": cabinet_number
                                 })
 
         return schedules
