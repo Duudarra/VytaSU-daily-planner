@@ -77,26 +77,38 @@ async def get_teacher_urls(response):
     list_urls = []
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # Предполагаем, что институты и кафедры организованы в div или section
-    institutes = soup.find_all(['div', 'section'], class_=['institute', 'faculty', ''])
+    # Институты / факультеты
+    faculties = soup.find_all('div', class_='fak_name')
     
-    for institute in institutes:
-        # Ищем заголовок института
-        institute_name = institute.find(['h2', 'h3'])
-        institute_name = institute_name.text.strip() if institute_name else "Unknown Institute"
+    for faculty in faculties:
+        faculty_name = faculty.text.strip()
         
-        # Ищем кафедры внутри института
-        departments = institute.find_all(['div', 'section'], class_=['department', ''])
-        for dept in departments:
-            dept_name = dept.find(['h3', 'h4'])
-            dept_name = dept_name.text.strip() if dept_name else "Unknown Department"
+        # Кафедры идут в соседнем блоке с id, начинающемся на fak_id_...
+        block_id = faculty.get('data-fak_id')
+        if not block_id:
+            continue
+        
+        block = soup.find('div', id=f'fak_id_{block_id}')
+        if not block:
+            continue
+        
+        # Находим кафедры
+        kafedry = block.find_all('div', class_='kafPeriod')
+        
+        for kaf in kafedry:
+            kafedra_name = kaf.text.strip()
             
-            # Ищем ссылки на файлы преподавателей
-            links = dept.find_all('a', href=re.compile(r'/reports/schedule/prepod/.*\.xls'))
+            # Ссылки на файлы расписания — ищем в родительском блоке кафедры
+            parent = kaf.parent
+            links = parent.find_all('a', href=re.compile(r'/reports/schedule/prepod/.*\.xls'))
+            
             for link in links:
                 url = "https://www.vyatsu.ru" + link['href']
-                teacher_name = link.text.strip()
+                # Имя преподавателя можно попытаться получить из текста ссылки, 
+                # но по вашему примеру это может быть отсутствует — тогда можно использовать kafedra_name
+                teacher_name = link.text.strip() or kafedra_name
                 
+                # Дальше ваш разбор даты и фильтрация по дате
                 try:
                     date_parts = url.split('_')
                     if len(date_parts) >= 3:
@@ -108,13 +120,14 @@ async def get_teacher_urls(response):
                         )
                         current_date = datetime.date.today()
                         if current_date < start_date and (start_date - current_date).days < 180:
-                            list_urls.append((url, teacher_name, dept_name))
-                            logger.info(f"Найдена ссылка преподавателя: {url}, преподаватель: {teacher_name}, кафедра: {dept_name}")
+                            list_urls.append((url, teacher_name, kafedra_name))
+                            logger.info(f"Найдена ссылка преподавателя: {url}, преподаватель: {teacher_name}, кафедра: {kafedra_name}")
                 except Exception as e:
                     logger.error(f"Ошибка обработки ссылки преподавателя {url}: {e}")
                     logger.error(traceback.format_exc())
-    
+                    
     return list_urls
+
 
 async def download(url: str) -> str:
     response = requests.get(url, headers=user_agent)
