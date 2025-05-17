@@ -360,18 +360,12 @@ async def startup_event():
     )
     scheduler.start()
 
-@app.get(
-    "/departments/",
-    response_model=List[str],
-    summary="Получить список кафедр",
-    description="Возвращает список уникальных кафедр."
-)
 
 @app.get(
     "/departments/",
     response_model=List[str],
     summary="Получить список кафедр",
-    description="Возвращает список уникальных кафедр. **Не требует авторизации.**"
+    description="Возвращает список уникальных кафедр."
 )
 async def get_departments(
     session: AsyncSession = Depends(get_session)
@@ -388,6 +382,12 @@ async def get_departments(
     description="Возвращает список свободных кабинетов на указанную дату и время."
 )
 
+@app.get(
+    "/me/",
+    response_model=schemas.UserOut,
+    summary="Получить данные текущего пользователя",
+    description="Возвращает данные текущего пользователя на основе JWT-токена."
+)
 async def get_current_user_data(
     current_user: schemas.UserOut = Depends(get_current_user),
     session: AsyncSession = Depends(get_session)

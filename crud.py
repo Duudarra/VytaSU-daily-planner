@@ -196,9 +196,6 @@ async def create_task(session: AsyncSession, task: schemas.TaskCreate, user_id: 
     return db_task
 
 async def get_unique_departments(session: AsyncSession) -> List[str]:
-    """
-    Получает список уникальных кафедр из таблицы schedules.
-    """
     result = await session.execute(
         select(Schedule.department).distinct().where(Schedule.department != None)
     )
