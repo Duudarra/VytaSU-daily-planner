@@ -195,6 +195,16 @@ async def create_task(session: AsyncSession, task: schemas.TaskCreate, user_id: 
     await session.refresh(db_task)
     return db_task
 
+async def get_unique_departments(session: AsyncSession) -> List[str]:
+    """
+    Получает список уникальных кафедр из таблицы schedules.
+    """
+    result = await session.execute(
+        select(Schedule.department).distinct().where(Schedule.department != None)
+    )
+    departments = [row[0] for row in result.fetchall()]
+    return departments
+
 async def get_tasks_by_user(session: AsyncSession, user_id: int) -> list[models.Task]:
     result = await session.execute(select(models.Task).filter(models.Task.user_id == user_id))
     return result.scalars().all()

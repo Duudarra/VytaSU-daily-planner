@@ -368,11 +368,27 @@ async def startup_event():
 )
 
 @app.get(
-    "/me/",
-    response_model=schemas.UserOut,
-    summary="Получить данные текущего пользователя",
-    description="Возвращает данные текущего пользователя на основе JWT-токена."
+    "/departments/",
+    response_model=List[str],
+    summary="Получить список кафедр",
+    description="Возвращает список уникальных кафедр. **Не требует авторизации.**",
+    security=[]  # Явно отключаем авторизацию в Swagger UI
 )
+async def get_departments(
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info("Запрос списка кафедр")
+    departments = await crud.get_unique_departments(session)
+    logger.info(f"Найдено {len(departments)} кафедр")
+    return departments
+
+@app.get(
+    "/schedule/free-cabinets/",
+    response_model=List[str],
+    summary="Получить свободные кабинеты на дату и время",
+    description="Возвращает список свободных кабинетов на указанную дату и время."
+)
+
 async def get_current_user_data(
     current_user: schemas.UserOut = Depends(get_current_user),
     session: AsyncSession = Depends(get_session)
