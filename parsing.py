@@ -244,7 +244,7 @@ async def parsing_url(url: str) -> None:
         logger.error(f"Ошибка обработки URL {url}: {e}")
         logger.error(traceback.format_exc())
 
-async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> None:
+async def parsing_teacher_url(url: str, department: str) -> None:
     try:
         path = await download(url)
         try:
@@ -257,17 +257,15 @@ async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> N
 
             for row in range(2, worksheet.max_row + 1):
                 date = worksheet.cell(row=row, column=1).value
-                time_lesson = worksheet.cell(row=row, column=3).value
-                name_group = worksheet.cell(row=row, column=4).value
-                name_discipline = worksheet.cell(row=row, column=5).value
-                # Убрали перезапись teacher_name
-                # teacher_name = worksheet.cell(row=row, column=6).value
-                cabinet_number = worksheet.cell(row=row, column=7).value
+                time_lesson = worksheet.cell(row=row, column=2).value  # Время теперь в колонке 2
+                teacher_name = worksheet.cell(row=row, column=3).value  # Преподаватель в колонке 3
+                combined_info = worksheet.cell(row=row, column=4).value  # Дисциплина и группа в колонке 4
+                cabinet_number = worksheet.cell(row=row, column=5).value  # Аудитория в колонке 5
 
-                if not all([date, time_lesson, name_group, name_discipline, teacher_name, cabinet_number]):
+                if not all([date, time_lesson, teacher_name, combined_info, cabinet_number]):
                     continue
 
-                # Приводим к строкам и обрезаем длину
+                # Приводим к строкам
                 teacher_name = str(teacher_name).strip()
                 if len(teacher_name) > 255:
                     logger.warning(f"Обрезано имя преподавателя: {teacher_name[:255]}...")
@@ -275,7 +273,7 @@ async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> N
 
                 date = str(date).strip()[-8:]
                 try:
-                    date_obj = datetime.datetime.strptime(date, "%d.%m.%y")
+                    date_obj = datetime.datetime.strptime(date, "%d.%m.%Y")
                     date = date_obj.strftime("%Y-%m-%d")
                 except ValueError as e:
                     logger.warning(f"Некорректный формат даты в строке {row}: {date}, пропуск")
@@ -287,9 +285,24 @@ async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> N
                     continue
                 time_lesson = time_from_pair[time_lesson]
 
-                name_group = str(name_group).strip()
-                name_discipline = str(name_discipline).strip()
-                cabinet_number = str(cabinet_number).strip()
+                # Разбираем combined_info на группу и дисциплину
+                combined_info = str(combined_info).strip()
+                name_group = "Unknown"
+                name_discipline = combined_info
+                if "кафедра" in combined_info.lower():
+                    parts = combined_info.split("кафедра")
+                    name_discipline = parts[0].strip()
+                    if len(parts) > 1:
+                        # Извлекаем группу, если она есть (например, "ИГЭ-171-23-01 доцент")
+                        discipline_part = parts[0].strip()
+                        group_match = re.search(r'([А-Яа-я0-9-]+-\d+-\d+-\d+)', discipline_part)
+                        if group_match:
+                            name_group = group_match.group(0)
+                            name_discipline = discipline_part.replace(name_group, "").strip()
+                elif re.search(r'([А-Яа-я0-9-]+-\d+-\d+-\d+)', combined_info):
+                    group_match = re.search(r'([А-Яа-я0-9-]+-\d+-\d+-\d+)', combined_info)
+                    name_group = group_match.group(0)
+                    name_discipline = combined_info.replace(name_group, "").strip()
 
                 if len(name_group) > 255:
                     logger.warning(f"Обрезано название группы: {name_group[:255]}...")
@@ -297,6 +310,7 @@ async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> N
                 if len(name_discipline) > 255:
                     logger.warning(f"Обрезано название дисциплины: {name_discipline[:255]}...")
                     name_discipline = name_discipline[:255]
+                cabinet_number = str(cabinet_number).strip()
                 if len(cabinet_number) > 50:
                     logger.warning(f"Обрезано название аудитории: {cabinet_number[:50]}...")
                     cabinet_number = cabinet_number[:50]
@@ -304,6 +318,7 @@ async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> N
                     logger.warning(f"Обрезано название кафедры: {department[:255]}...")
                     department = department[:255]
 
+                logger.info(f"Запись в базу: date={date}, time_lesson={time_lesson}, cabinet_number={cabinet_number}, group={name_group}, teacher={teacher_name}, discipline={name_discipline}, department={department}")
                 await update_schedule(
                     date,
                     time_lesson,
