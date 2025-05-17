@@ -529,20 +529,28 @@ async def start_parsing():
         logger.info("Начало парсинга расписания университета (аудитории)")
         response = await get_content(url_site)
         urls = await get_urls(response)
-        for url in urls:
-            await parsing_url(url)
+        
+        # Создаем задачи для всех URL
+        tasks = [asyncio.create_task(parsing_url(url)) for url in urls]
+        await asyncio.gather(*tasks)
+        
         logger.info("Парсинг расписания университета (аудитории) завершен")
 
         logger.info("Начало парсинга расписания преподавателей")
         response = await get_content(url_teacher_site)
         teacher_urls = await get_teacher_urls(response)
-        for url, teacher_name, department in teacher_urls:
-            await parsing_teacher_url(url, teacher_name, department)
+        
+        # Задачи для парсинга преподавателей
+        teacher_tasks = [asyncio.create_task(parsing_teacher_url(url, teacher_name, department))
+                         for url, teacher_name, department in teacher_urls]
+        await asyncio.gather(*teacher_tasks)
+
         logger.info("Парсинг расписания преподавателей завершен")
 
         logger.info("Начало парсинга расписания колледжа из VK")
         await parse_vk_schedule_async()
         logger.info("Парсинг расписания колледжа из VK завершен")
+
     except Exception as e:
         logger.error(f"Ошибка парсинга: {e}")
         logger.error(traceback.format_exc())
