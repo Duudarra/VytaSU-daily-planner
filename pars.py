@@ -3,6 +3,7 @@ from models import async_main
 from parsing import start_parsing
 import logging
 
+
 # Настройка логирования в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
