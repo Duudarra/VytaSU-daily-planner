@@ -371,8 +371,7 @@ async def startup_event():
     "/departments/",
     response_model=List[str],
     summary="Получить список кафедр",
-    description="Возвращает список уникальных кафедр. **Не требует авторизации.**",
-    security=[]  # Явно отключаем авторизацию в Swagger UI
+    description="Возвращает список уникальных кафедр. **Не требует авторизации.**"
 )
 async def get_departments(
     session: AsyncSession = Depends(get_session)
