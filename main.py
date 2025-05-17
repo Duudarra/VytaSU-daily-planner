@@ -216,8 +216,7 @@ async def delete_old_schedule(before: date, session: AsyncSession = Depends(get_
 @app.on_event("startup")
 async def startup_event():
     logger.info("Запуск приложения и планировщика")
-    # Закомментирован запуск парсера при старте
-    # asyncio.create_task(parser_main()) пока отключен
+    asyncio.create_task(parser_main())
     # Планируем парсер на 6:00 MSK ежедневно
     scheduler.add_job(
         parser_main,
