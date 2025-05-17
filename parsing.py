@@ -73,60 +73,52 @@ async def get_urls(response):
         text = text[end_index:]
     return list_urls
 
+from bs4 import BeautifulSoup
+import re
+import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
 async def get_teacher_urls(response):
     list_urls = []
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # Институты / факультеты
-    faculties = soup.find_all('div', class_='fak_name')
+    # Находим все кафедры на странице
+    kafedry = soup.find_all('div', class_='kafPeriod')
     
-    for faculty in faculties:
-        faculty_name = faculty.text.strip()
+    for kaf in kafedry:
+        kafedra_name = kaf.text.strip()
         
-        # Кафедры идут в соседнем блоке с id, начинающемся на fak_id_...
-        block_id = faculty.get('data-fak_id')
-        if not block_id:
-            continue
+        # Родительский блок, где лежат ссылки на расписание кафедры
+        parent = kaf.parent
         
-        block = soup.find('div', id=f'fak_id_{block_id}')
-        if not block:
-            continue
+        # Ищем все ссылки на xls внутри этого блока
+        links = parent.find_all('a', href=re.compile(r'/reports/schedule/prepod/.*\.xls'))
         
-        # Находим кафедры
-        kafedry = block.find_all('div', class_='kafPeriod')
-        
-        for kaf in kafedry:
-            kafedra_name = kaf.text.strip()
+        for link in links:
+            url = "https://www.vyatsu.ru" + link['href']
             
-            # Ссылки на файлы расписания — ищем в родительском блоке кафедры
-            parent = kaf.parent
-            links = parent.find_all('a', href=re.compile(r'/reports/schedule/prepod/.*\.xls'))
-            
-            for link in links:
-                url = "https://www.vyatsu.ru" + link['href']
-                # Имя преподавателя можно попытаться получить из текста ссылки, 
-                # но по вашему примеру это может быть отсутствует — тогда можно использовать kafedra_name
-                teacher_name = link.text.strip() or kafedra_name
-                
-                # Дальше ваш разбор даты и фильтрация по дате
-                try:
-                    date_parts = url.split('_')
-                    if len(date_parts) >= 3:
-                        start_date_str = date_parts[-2]
-                        start_date = datetime.date(
-                            year=int(start_date_str[4:8]),
-                            month=int(start_date_str[2:4]),
-                            day=int(start_date_str[0:2]),
-                        )
-                        current_date = datetime.date.today()
-                        if current_date < start_date and (start_date - current_date).days < 180:
-                            list_urls.append((url, teacher_name, kafedra_name))
-                            logger.info(f"Найдена ссылка преподавателя: {url}, преподаватель: {teacher_name}, кафедра: {kafedra_name}")
-                except Exception as e:
-                    logger.error(f"Ошибка обработки ссылки преподавателя {url}: {e}")
-                    logger.error(traceback.format_exc())
-                    
+            try:
+                # Парсим дату начала из имени файла для фильтрации
+                parts = url.split('_')
+                if len(parts) >= 3:
+                    start_date_str = parts[-2]
+                    start_date = datetime.date(
+                        year=int(start_date_str[4:8]),
+                        month=int(start_date_str[2:4]),
+                        day=int(start_date_str[0:2]),
+                    )
+                    current_date = datetime.date.today()
+                    # Отбираем только актуальные файлы
+                    if current_date < start_date and (start_date - current_date).days < 180:
+                        list_urls.append((url, kafedra_name))
+                        logger.info(f"Найдена ссылка кафедры: {url}, кафедра: {kafedra_name}")
+            except Exception as e:
+                logger.error(f"Ошибка обработки ссылки {url}: {e}")
+    
     return list_urls
+
 
 
 async def download(url: str) -> str:
