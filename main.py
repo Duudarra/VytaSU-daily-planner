@@ -348,6 +348,9 @@ async def delete_old_schedule(before: date, session: AsyncSession = Depends(get_
 @app.on_event("startup")
 async def startup_event():
     logger.info("Запуск приложения и планировщика")
+
+    logger.info("Запуск парсера при старте сервера")
+    await parser_main()
     scheduler.add_job(
         parser_main,
         trigger=CronTrigger(hour=6, minute=0, timezone="Europe/Moscow"),
