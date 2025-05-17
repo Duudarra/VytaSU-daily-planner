@@ -37,9 +37,9 @@ class Schedule(Base):
     date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     time_lesson: Mapped[str] = mapped_column(String(50), nullable=False)
     cabinet_number: Mapped[str] = mapped_column(String(50), nullable=False)
-    name_group: Mapped[str] = mapped_column(String(100), nullable=False)
-    name_teacher: Mapped[str] = mapped_column(String(100), nullable=False)
-    name_discipline: Mapped[str] = mapped_column(String(100), nullable=False)
+    name_group: Mapped[str] = mapped_column(String(255), nullable=False)
+    name_teacher: Mapped[str] = mapped_column(String(255), nullable=False)
+    name_discipline: Mapped[str] = mapped_column(String(255), nullable=False)
 
 class User(Base):
     __tablename__ = "users"
