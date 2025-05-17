@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Schedule API",
-    description="API для получения расписания занятий по группам и преподавателям",
+    description="API для получения расписания занятий по группам, преподавателям, кафедрам, кабинетам, а также поиска свободных кабинетов.",
     version="1.0.0"
 )
 
@@ -55,7 +55,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
         )
     return schemas.UserOut.from_orm(user)
 
-# Эндпоинты для задач
 @app.post(
     "/tasks/",
     response_model=schemas.TaskOut,
@@ -68,7 +67,6 @@ async def create_task(
     session: AsyncSession = Depends(get_session)
 ):
     logger.info(f"Создание задачи для пользователя: user_id={current_user.id}")
-    # Передаем user_id из current_user, а не из тела запроса
     db_task = await crud.create_task(session, task, current_user.id)
     return db_task
 
@@ -139,7 +137,7 @@ async def login_user(email: str, password: str, session: AsyncSession = Depends(
 @app.get(
     "/schedule/by-date-group/",
     response_model=List[schemas.ScheduleOut],
-    summary="Получить расписание по дате и группе",
+    summary="Получить расписание группы на дату",
     description="Возвращает расписание занятий для указанной группы на заданную дату."
 )
 async def get_schedule_by_date_group(
@@ -155,7 +153,7 @@ async def get_schedule_by_date_group(
 @app.get(
     "/schedule/by-date-teacher/",
     response_model=List[schemas.ScheduleOut],
-    summary="Получить расписание по дате и преподавателю",
+    summary="Получить расписание преподавателя на дату",
     description="Возвращает расписание занятий для указанного преподавателя на заданную дату."
 )
 async def get_schedule_by_date_teacher(
@@ -171,7 +169,7 @@ async def get_schedule_by_date_teacher(
 @app.get(
     "/schedule/by-range-group/",
     response_model=List[schemas.ScheduleOut],
-    summary="Получить расписание по группе за период дат",
+    summary="Получить расписание группы за период дат",
     description="Возвращает расписание занятий для указанной группы за указанный период дат."
 )
 async def get_schedule_by_group_range(
@@ -188,7 +186,7 @@ async def get_schedule_by_group_range(
 @app.get(
     "/schedule/by-range-teacher/",
     response_model=List[schemas.ScheduleOut],
-    summary="Получить расписание по преподавателю за период дат",
+    summary="Получить расписание преподавателя за период дат",
     description="Возвращает расписание занятий для указанного преподавателя за указанный период дат."
 )
 async def get_schedule_by_teacher_range(
@@ -199,6 +197,140 @@ async def get_schedule_by_teacher_range(
 ):
     logger.info(f"Запрос расписания: name_teacher={name_teacher!r}, start_date={start_date}, end_date={end_date}")
     result = await crud.get_schedule_by_teacher_and_date_range(session, name_teacher, start_date, end_date)
+    logger.info(f"Найдено {len(result)} записей")
+    return result
+
+@app.get(
+    "/schedule/by-date-department/",
+    response_model=List[schemas.ScheduleOut],
+    summary="Получить расписание кафедры на дату",
+    description="Возвращает расписание занятий для указанной кафедры на заданную дату."
+)
+async def get_schedule_by_date_department(
+    date: date,
+    department: str,
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос расписания: date={date}, department={department!r}")
+    result = await crud.get_schedule_by_date_and_department(session, date, department)
+    logger.info(f"Найдено {len(result)} записей")
+    return result
+
+@app.get(
+    "/schedule/by-department/",
+    response_model=List[schemas.ScheduleOut],
+    summary="Получить расписание кафедры за период дат",
+    description="Возвращает расписание занятий для указанной кафедры за указанный период дат."
+)
+async def get_schedule_by_department(
+    department: str,
+    start_date: date,
+    end_date: date,
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос расписания: department={department!r}, start_date={start_date}, end_date={end_date}")
+    result = await crud.get_schedule_by_department(session, department, start_date, end_date)
+    logger.info(f"Найдено {len(result)} записей")
+    return result
+
+@app.get(
+    "/schedule/by-date-department-teacher/",
+    response_model=List[schemas.ScheduleOut],
+    summary="Получить расписание кафедры и преподавателя на дату",
+    description="Возвращает расписание занятий для указанной кафедры и преподавателя на заданную дату."
+)
+async def get_schedule_by_date_department_teacher(
+    date: date,
+    department: str,
+    name_teacher: str,
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос расписания: date={date}, department={department!r}, name_teacher={name_teacher!r}")
+    result = await crud.get_schedule_by_date_department_teacher(session, date, department, name_teacher)
+    logger.info(f"Найдено {len(result)} записей")
+    return result
+
+@app.get(
+    "/schedule/by-range-department-teacher/",
+    response_model=List[schemas.ScheduleOut],
+    summary="Получить расписание кафедры и преподавателя за период дат",
+    description="Возвращает расписание занятий для указанной кафедры и преподавателя за указанный период дат."
+)
+async def get_schedule_by_department_teacher_range(
+    department: str,
+    name_teacher: str,
+    start_date: date,
+    end_date: date,
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос расписания: department={department!r}, name_teacher={name_teacher!r}, start_date={start_date}, end_date={end_date}")
+    result = await crud.get_schedule_by_department_teacher_range(session, department, name_teacher, start_date, end_date)
+    logger.info(f"Найдено {len(result)} записей")
+    return result
+
+@app.get(
+    "/schedule/free-cabinets/",
+    response_model=List[str],
+    summary="Получить свободные кабинеты на дату и время",
+    description="Возвращает список свободных кабинетов на указанную дату и время."
+)
+async def get_free_cabinets(
+    date: date,
+    time_lesson: str,
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос свободных кабинетов: date={date}, time_lesson={time_lesson}")
+    result = await crud.get_free_cabinets(session, date, time_lesson)
+    logger.info(f"Найдено {len(result)} свободных кабинетов")
+    return result
+
+@app.get(
+    "/schedule/free-cabinets-range/",
+    response_model=List[dict],
+    summary="Получить свободные кабинеты за период дат",
+    description="Возвращает список свободных кабинетов для указанного времени за период дат."
+)
+async def get_free_cabinets_range(
+    start_date: date,
+    end_date: date,
+    time_lesson: str,
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос свободных кабинетов: start_date={start_date}, end_date={end_date}, time_lesson={time_lesson}")
+    result = await crud.get_free_cabinets_range(session, start_date, end_date, time_lesson)
+    logger.info(f"Найдено свободных кабинетов для {len(result)} дат")
+    return result
+
+@app.get(
+    "/schedule/by-date-cabinet/",
+    response_model=List[schemas.ScheduleOut],
+    summary="Получить расписание кабинета на дату",
+    description="Возвращает расписание занятий для указанного кабинета на заданную дату."
+)
+async def get_schedule_by_date_cabinet(
+    date: date,
+    cabinet_number: str,
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос расписания: date={date}, cabinet_number={cabinet_number!r}")
+    result = await crud.get_schedule_by_date_and_cabinet(session, date, cabinet_number)
+    logger.info(f"Найдено {len(result)} записей")
+    return result
+
+@app.get(
+    "/schedule/by-range-cabinet/",
+    response_model=List[schemas.ScheduleOut],
+    summary="Получить расписание кабинета за период дат",
+    description="Возвращает расписание занятий для указанного кабинета за указанный период дат."
+)
+async def get_schedule_by_cabinet_range(
+    cabinet_number: str,
+    start_date: date,
+    end_date: date,
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Запрос расписания: cabinet_number={cabinet_number!r}, start_date={start_date}, end_date={end_date}")
+    result = await crud.get_schedule_by_cabinet_range(session, cabinet_number, start_date, end_date)
     logger.info(f"Найдено {len(result)} записей")
     return result
 
@@ -216,8 +348,6 @@ async def delete_old_schedule(before: date, session: AsyncSession = Depends(get_
 @app.on_event("startup")
 async def startup_event():
     logger.info("Запуск приложения и планировщика")
-    asyncio.create_task(parser_main())
-    # Планируем парсер на 6:00 MSK ежедневно
     scheduler.add_job(
         parser_main,
         trigger=CronTrigger(hour=6, minute=0, timezone="Europe/Moscow"),
@@ -225,6 +355,13 @@ async def startup_event():
         replace_existing=True
     )
     scheduler.start()
+
+@app.get(
+    "/departments/",
+    response_model=List[str],
+    summary="Получить список кафедр",
+    description="Возвращает список уникальных кафедр."
+)
 
 @app.get(
     "/me/",
@@ -244,7 +381,6 @@ async def shutdown_event():
     logger.info("Остановка приложения и планировщика")
     scheduler.shutdown()
 
-# Эндпоинт для ручного запуска парсера
 @app.post("/run-parser/", summary="Ручной запуск парсера", description="Запускает парсер для обновления расписания.")
 async def run_parser():
     logger.info("Ручной запуск парсера")

@@ -40,6 +40,7 @@ class Schedule(Base):
     name_group: Mapped[str] = mapped_column(String(255), nullable=False)
     name_teacher: Mapped[str] = mapped_column(String(255), nullable=False)
     name_discipline: Mapped[str] = mapped_column(String(255), nullable=False)
+    department: Mapped[str] = mapped_column(String(255), nullable=True)
 
 class User(Base):
     __tablename__ = "users"
@@ -56,7 +57,7 @@ class Task(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(100), nullable=False)
-    date: Mapped[str] = mapped_column(String(50), nullable=False)  # ISO 8601 или другой формат
+    date: Mapped[str] = mapped_column(String(50), nullable=False)
     time: Mapped[str] = mapped_column(String(50), nullable=False)
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     priority: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -66,7 +67,7 @@ class Task(Base):
 
 async def async_main():
     max_retries = 5
-    retry_delay = 10  # секунды
+    retry_delay = 10
     for attempt in range(max_retries):
         try:
             async with engine.begin() as conn:

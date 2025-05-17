@@ -18,7 +18,6 @@ def connection(func):
 async def delete_outdated_schedules(session):
     two_weeks_ago = datetime.datetime.now().date() - datetime.timedelta(weeks=2)
     
-    # Удаление записей старше 2 недель за один запрос
     result = await session.execute(
         delete(Schedule).where(Schedule.date < two_weeks_ago)
     )
@@ -37,19 +36,19 @@ async def update_schedule(
     *,
     empty=False,
     many=False,
+    department=None
 ):
-    # Конвертация даты в datetime.date, если она в формате строки
     if isinstance(date, str):
         try:
-            if len(date) == 8 and '.' in date:  # dd.mm.yy
+            if len(date) == 8 and '.' in date:
                 date = datetime.datetime.strptime(date, "%d.%m.%y").date()
-            else:  # Предполагаем YYYY-MM-DD
+            else:
                 date = datetime.datetime.strptime(date, "%Y-%m-%d").date()
         except ValueError as e:
             logger.error(f"Ошибка формата даты: {date}, {e}")
             raise ValueError(f"Неверный формат даты: {date}")
 
-    logger.info(f"Обновление расписания: date={date}, time_lesson={time_lesson}, cabinet_number={cabinet_number}, empty={empty}, many={many}")
+    logger.info(f"Обновление расписания: date={date}, time_lesson={time_lesson}, cabinet_number={cabinet_number}, empty={empty}, many={many}, department={department}")
     
     query = select(Schedule).where(
         Schedule.date == date,
@@ -68,7 +67,6 @@ async def update_schedule(
             result = await session.execute(delete_query)
             await session.commit()
             logger.info(f"Удалено {result.rowcount} записей (empty=True)")
-
     else:
         if not data:
             for i in range(len(name_of_group)):
@@ -79,11 +77,11 @@ async def update_schedule(
                     name_group=name_of_group[i] or "Unknown",
                     name_teacher=name_teacher[i] or "Unknown",
                     name_discipline=name_of_discipline[i] or "Unknown",
+                    department=department
                 )
                 session.add(new_record)
             await session.commit()
             logger.info(f"Добавлено {len(name_of_group)} новых записей")
-
         else:
             if many:
                 delete_query = delete(Schedule).where(
@@ -103,11 +101,11 @@ async def update_schedule(
                         name_group=name_of_group[i] or "Unknown",
                         name_teacher=name_teacher[i] or "Unknown",
                         name_discipline=name_of_discipline[i] or "Unknown",
+                        department=department
                     )
                     session.add(new_record)
                 await session.commit()
                 logger.info(f"Добавлено {len(name_of_group)} новых записей (many=True)")
-
             else:
                 if len(data) == 1:
                     update_query = (
@@ -121,6 +119,7 @@ async def update_schedule(
                             name_group=name_of_group[0] or "Unknown",
                             name_teacher=name_teacher[0] or "Unknown",
                             name_discipline=name_of_discipline[0] or "Unknown",
+                            department=department
                         )
                     )
                     await session.execute(update_query)
@@ -143,6 +142,7 @@ async def update_schedule(
                         name_group=name_of_group[0] or "Unknown",
                         name_teacher=name_teacher[0] or "Unknown",
                         name_discipline=name_of_discipline[0] or "Unknown",
+                        department=department
                     )
                     session.add(new_record)
                     await session.commit()

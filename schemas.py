@@ -10,6 +10,7 @@ class ScheduleOut(BaseModel):
     name_group: str
     name_teacher: str
     name_discipline: str
+    department: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)
 

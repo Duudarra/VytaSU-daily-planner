@@ -10,6 +10,7 @@ import tempfile
 import vk_api
 import pandas as pd
 import re
+from bs4 import BeautifulSoup
 
 from dbrequests import delete_outdated_schedules, update_schedule
 
@@ -74,36 +75,45 @@ async def get_urls(response):
 
 async def get_teacher_urls(response):
     list_urls = []
-    text: str = response.text
-
-    while True:
-        index = text.find('href="/reports/schedule/prepod/')
-        if index == -1:
-            break
-        start_index = index + len('href="')
-        end_index = text.find('"', start_index)
-        url = "https://www.vyatsu.ru" + text[start_index:end_index]
-
-        if url.endswith(".xls"):
-            try:
-                # Извлечение дат из имени файла, например, 23062025_06072025
-                date_parts = url.split('_')
-                if len(date_parts) >= 3:
-                    start_date_str = date_parts[-2]  # 23062025
-                    end_date_str = date_parts[-1].replace('.xls', '')  # 06072025
-                    start_date = datetime.date(
-                        year=int(start_date_str[4:8]),
-                        month=int(start_date_str[2:4]),
-                        day=int(start_date_str[0:2]),
-                    )
-                    current_date = datetime.date.today()
-                    if current_date < start_date and (start_date - current_date).days < 180:
-                        list_urls.append(url)
-                        logger.info(f"Найдена актуальная ссылка преподавателя: {url}")
-            except Exception as e:
-                logger.error(f"Ошибка обработки ссылки преподавателя {url}: {e}")
-                logger.error(traceback.format_exc())
-        text = text[end_index:]
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # Предполагаем, что институты и кафедры организованы в div или section
+    institutes = soup.find_all(['div', 'section'], class_=['institute', 'faculty', ''])
+    
+    for institute in institutes:
+        # Ищем заголовок института
+        institute_name = institute.find(['h2', 'h3'])
+        institute_name = institute_name.text.strip() if institute_name else "Unknown Institute"
+        
+        # Ищем кафедры внутри института
+        departments = institute.find_all(['div', 'section'], class_=['department', ''])
+        for dept in departments:
+            dept_name = dept.find(['h3', 'h4'])
+            dept_name = dept_name.text.strip() if dept_name else "Unknown Department"
+            
+            # Ищем ссылки на файлы преподавателей
+            links = dept.find_all('a', href=re.compile(r'/reports/schedule/prepod/.*\.xls'))
+            for link in links:
+                url = "https://www.vyatsu.ru" + link['href']
+                teacher_name = link.text.strip()
+                
+                try:
+                    date_parts = url.split('_')
+                    if len(date_parts) >= 3:
+                        start_date_str = date_parts[-2]
+                        start_date = datetime.date(
+                            year=int(start_date_str[4:8]),
+                            month=int(start_date_str[2:4]),
+                            day=int(start_date_str[0:2]),
+                        )
+                        current_date = datetime.date.today()
+                        if current_date < start_date and (start_date - current_date).days < 180:
+                            list_urls.append((url, teacher_name, dept_name))
+                            logger.info(f"Найдена ссылка преподавателя: {url}, преподаватель: {teacher_name}, кафедра: {dept_name}")
+                except Exception as e:
+                    logger.error(f"Ошибка обработки ссылки преподавателя {url}: {e}")
+                    logger.error(traceback.format_exc())
+    
     return list_urls
 
 async def download(url: str) -> str:
@@ -154,7 +164,7 @@ async def parsing_url(url: str) -> None:
                     while date is None:
                         date = worksheet.cell(row=index_for_day, column=1).value
                         index_for_day -= 1
-                    date = date.strip()[-8:]  # dd.mm.yy
+                    date = date.strip()[-8:]
                     date_obj = datetime.datetime.strptime(date, "%d.%m.%y")
                     date = date_obj.strftime("%Y-%m-%d")
 
@@ -228,7 +238,7 @@ async def parsing_url(url: str) -> None:
         logger.error(f"Ошибка обработки URL {url}: {e}")
         logger.error(traceback.format_exc())
 
-async def parsing_teacher_url(url: str) -> None:
+async def parsing_teacher_url(url: str, teacher_name: str, department: str) -> None:
     try:
         path = await download(url)
         try:
@@ -239,20 +249,6 @@ async def parsing_teacher_url(url: str) -> None:
             workbook = load_workbook(xlsx_path)
             worksheet = workbook.active
 
-            # Попытка извлечь имя преподавателя из имени файла или заголовка
-            teacher_name = "Unknown"
-            try:
-                filename = url.split('/')[-1]
-                parts = filename.split('_')
-                if len(parts) > 1:
-                    teacher_name = parts[1].replace('_', ' ')  # Предполагаем, что имя закодировано в имени файла
-                # Альтернативно: извлечь из ячейки заголовка, если известно расположение
-                header = worksheet.cell(row=1, column=1).value
-                if header and isinstance(header, str) and '.' in header:
-                    teacher_name = header.strip()
-            except Exception as e:
-                logger.warning(f"Не удалось извлечь имя преподавателя из {url}: {e}")
-
             for row in range(2, worksheet.max_row + 1):
                 date = worksheet.cell(row=row, column=1).value
                 time_lesson = worksheet.cell(row=row, column=3).value
@@ -260,12 +256,10 @@ async def parsing_teacher_url(url: str) -> None:
                 name_discipline = worksheet.cell(row=row, column=5).value
                 cabinet_number = worksheet.cell(row=row, column=7).value
 
-                # Пропуск пустых строк
                 if not all([date, time_lesson, name_group, name_discipline, cabinet_number]):
                     continue
 
-                # Обработка даты
-                date = str(date).strip()[-8:]  # dd.mm.yy
+                date = str(date).strip()[-8:]
                 try:
                     date_obj = datetime.datetime.strptime(date, "%d.%m.%y")
                     date = date_obj.strftime("%Y-%m-%d")
@@ -273,19 +267,16 @@ async def parsing_teacher_url(url: str) -> None:
                     logger.warning(f"Некорректный формат даты в строке {row}: {date}, пропуск")
                     continue
 
-                # Обработка времени
                 time_lesson = str(time_lesson).strip()
                 if time_lesson not in time_from_pair:
                     logger.warning(f"Неизвестное время пары в строке {row}: {time_lesson}, пропуск")
                     continue
                 time_lesson = time_from_pair[time_lesson]
 
-                # Обработка строковых данных
                 name_group = str(name_group).strip()
                 name_discipline = str(name_discipline).strip()
                 cabinet_number = str(cabinet_number).strip()
 
-                # Валидация длины строк
                 if len(name_group) > 255:
                     logger.warning(f"Обрезано название группы: {name_group[:255]}...")
                     name_group = name_group[:255]
@@ -298,8 +289,10 @@ async def parsing_teacher_url(url: str) -> None:
                 if len(cabinet_number) > 50:
                     logger.warning(f"Обрезано название аудитории: {cabinet_number[:50]}...")
                     cabinet_number = cabinet_number[:50]
+                if len(department) > 255:
+                    logger.warning(f"Обрезано название кафедры: {department[:255]}...")
+                    department = department[:255]
 
-                # Сохранение в базу данных
                 await update_schedule(
                     date,
                     time_lesson,
@@ -307,6 +300,7 @@ async def parsing_teacher_url(url: str) -> None:
                     [name_group],
                     [teacher_name],
                     [name_discipline],
+                    department=department
                 )
 
             os.remove(xlsx_path)
@@ -465,10 +459,6 @@ async def parse_schedule_structured(file_path, file_name):
                         if 'nan' in time_val.lower() or not time_val:
                             continue
 
-                        time_val = str(df.iloc[idx, time_col]).strip()
-                        if 'nan' in time_val.lower() or not time_val:
-                            continue
-
                         if re.match(r'^\d{1,2}\.\d{2}-\d{1,2}\.\d{2}$', time_val):
                             pass
                         elif time_val in time_from_pair:
@@ -531,7 +521,6 @@ async def parse_schedule_structured(file_path, file_name):
 async def start_parsing():
     await delete_outdated_schedules()
     try:
-        # Парсинг расписания университета (аудитории)
         logger.info("Начало парсинга расписания университета (аудитории)")
         response = await get_content(url_site)
         urls = await get_urls(response)
@@ -539,15 +528,13 @@ async def start_parsing():
             await parsing_url(url)
         logger.info("Парсинг расписания университета (аудитории) завершен")
 
-        # Парсинг расписания преподавателей
         logger.info("Начало парсинга расписания преподавателей")
         response = await get_content(url_teacher_site)
         teacher_urls = await get_teacher_urls(response)
-        for url in teacher_urls:
-            await parsing_teacher_url(url)
+        for url, teacher_name, department in teacher_urls:
+            await parsing_teacher_url(url, teacher_name, department)
         logger.info("Парсинг расписания преподавателей завершен")
 
-        # Парсинг расписания колледжа из VK
         logger.info("Начало парсинга расписания колледжа из VK")
         await parse_vk_schedule_async()
         logger.info("Парсинг расписания колледжа из VK завершен")
