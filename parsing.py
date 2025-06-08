@@ -34,7 +34,7 @@ user_agent = {
 url_site = "https://www.vyatsu.ru/studentu-1/spravochnaya-informatsiya/zanyatost-auditoriy.html"
 url_teacher_site = "https://www.vyatsu.ru/studentu-1/spravochnaya-informatsiya/teacher.html"
 
-VK_TOKEN = "vk1.a.GT1bhyYCNuikwpgwwnS2BeE-UltutlTdSShHNV6L2iDfeg7fLa7cGewT6f4gVQnRy2PKf65Vcu-cKUWhU3neTsVB9Ap5SyvKtuENOxbAm9oT7EQFqrdgmLG6M3ttU-DyDWnwt5Erm6QhUQqJB-nYPi9t6KSrIynIWw99MCZsj7mZbvMb_fZeQr0I-97dz-Ylekzi6gi8iMnyA2t3RMtj3w"
+VK_TOKEN = "vk1.a.YuX9gnjerpqsHelvHxZcT9soW6v98ZEOU0Hqv52WIObZDpRcZ8jJJbM3p4xmS6KTQvMZcb3RulngmFj8KIZz41IS1XDGWXtAaMlVfzTTKf4WvEGxdkVdzzOneSf_kXXLr6Vs1wkduZXUO9cowKkk9bRsoN3X1Jg_jZ9OP8puK5vH-i5elMjS10yByQWl4bJxjhr13gylKqCBS3ab9Dz8oA"
 GROUP_ID = "-85060840"
 
 async def get_content(url):
@@ -494,9 +494,28 @@ async def parse_schedule_structured(file_path, file_name):
                             continue
 
                         for group_idx, group_col in enumerate(group_cols):
-                            name_discipline = str(df.iloc[idx, group_col]).strip()
-                            name_teacher = str(df.iloc[idx, group_col + 2]).strip()
-                            cabinet_number = str(df.iloc[idx, group_col + 3]).strip()
+                            cell_value = "\n".join([
+                                str(df.iloc[idx, group_col]).strip(),
+                                str(df.iloc[idx, group_col + 2]).strip(),
+                                str(df.iloc[idx, group_col + 3]).strip()
+                            ])
+                            parsed_items = improved_parse_cell(cell_value)
+
+                            for item in parsed_items:
+                                if not all([item["discipline"], item["teacher"], item["cabinet"]]):
+                                    continue
+                                if not re.match(r'^\d+-\d+$', item["cabinet"]):
+                                    logger.warning(f"Некорректный номер аудитории: {item['cabinet']}, пропуск")
+                                    continue
+                                schedules.append({
+                                    "name_group": group_names[group_idx],
+                                    "date": current_date.strftime("%Y-%m-%d"),
+                                    "time_lesson": time_val,
+                                    "name_discipline": item["discipline"],
+                                    "name_teacher": item["teacher"],
+                                    "cabinet_number": item["cabinet"]
+                                })
+
 
                             if '\n' in name_discipline:
                                 disciplines = name_discipline.split('\n')
