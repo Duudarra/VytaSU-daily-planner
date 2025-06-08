@@ -11,6 +11,7 @@ import vk_api
 import pandas as pd
 import re
 from bs4 import BeautifulSoup
+from typing import List, Dict, Optional
 
 from dbrequests import delete_outdated_schedules, update_schedule
 
@@ -79,6 +80,54 @@ import datetime
 import logging
 
 logger = logging.getLogger(__name__)
+
+def improved_parse_cell(cell_text: str) -> List[Dict[str, Optional[str]]]:
+    if not cell_text or not isinstance(cell_text, str):
+        return []
+
+    entries = cell_text.strip().split("\n")
+    results = []
+
+    current = {
+        "discipline": "",
+        "lesson_type": "",
+        "teacher": "",
+        "cabinet": "",
+        "subgroup": ""
+    }
+
+    for line in entries:
+        line = line.strip()
+        if not line:
+            continue
+
+        # Аудитория
+        if re.match(r"^\d{1,2}-\d{1,3}$", line):
+            current["cabinet"] = line
+            continue
+
+        # Преподаватель
+        if re.match(r".+\s[А-ЯЁ]\.[А-ЯЁ]\.", line):
+            current["teacher"] = line
+            continue
+
+        # Вид занятия
+        if "занятие" in line or "Лекция" in line or "урок" in line:
+            current["lesson_type"] = line
+            continue
+
+        # Подгруппа
+        if "подгруппа" in line:
+            current["subgroup"] = line
+            continue
+
+        # Всё остальное — дисциплина
+        current["discipline"] += (line + " ")
+
+    current = {k: v.strip() for k, v in current.items()}
+    results.append(current)
+
+    return results
 
 async def get_teacher_urls(response):
     list_urls = []
@@ -384,6 +433,15 @@ async def parse_vk_schedule_async():
                             schedules = await parse_schedule_structured(downloaded_file, file_name)
                             logger.info(f"Обработано {len(schedules)} записей из {file_name}")
 
+                            # Временный лог для отладки
+                            for entry in schedules[:5]:  # Показываем только первые 5 записей
+                                logger.info(
+                                    f"[ПРОВЕРКА ВК РАСПИСАНИЯ] {entry['date']} | {entry['time_lesson']} | "
+                                    f"{entry['name_group']} | {entry['name_discipline']} | "
+                                    f"{entry['name_teacher']} | {entry['cabinet_number']}"
+    )
+
+
                             for entry in schedules:
                                 await update_schedule(
                                     entry["date"],
@@ -515,47 +573,7 @@ async def parse_schedule_structured(file_path, file_name):
                                     "name_teacher": item["teacher"],
                                     "cabinet_number": item["cabinet"]
                                 })
-
-
-                            if '\n' in name_discipline:
-                                disciplines = name_discipline.split('\n')
-                                teachers = name_teacher.split('\n') if '\n' in name_teacher else [name_teacher] * len(disciplines)
-                                for d, t in zip(disciplines, teachers):
-                                    if 'nan' in [d, t, cabinet_number] or not all([d, t, cabinet_number]):
-                                        continue
-                                    if not re.match(r'^\d+-\d+$', cabinet_number):
-                                        logger.warning(f"Некорректный номер аудитории: {cabinet_number}, пропуск")
-                                        continue
-                                    if len(d) > 255:
-                                        logger.warning(f"Обрезано название дисциплины: {d[:255]}...")
-                                        d = d[:255]
-                                    if current_date:
-                                        schedules.append({
-                                            "name_group": group_names[group_idx],
-                                            "date": current_date.strftime("%Y-%m-%d"),
-                                            "time_lesson": time_val,
-                                            "name_discipline": d,
-                                            "name_teacher": t,
-                                            "cabinet_number": cabinet_number
-                                        })
-                            else:
-                                if 'nan' in [name_discipline, name_teacher, cabinet_number] or not all([name_discipline, name_teacher, cabinet_number]):
-                                    continue
-                                if not re.match(r'^\d+-\d+$', cabinet_number):
-                                    logger.warning(f"Некорректный номер аудитории: {cabinet_number}, пропуск")
-                                    continue
-                                if len(name_discipline) > 255:
-                                    logger.warning(f"Обрезано название дисциплины: {name_discipline[:255]}...")
-                                    name_discipline = name_discipline[:255]
-                                if current_date:
-                                    schedules.append({
-                                        "name_group": group_names[group_idx],
-                                        "date": current_date.strftime("%Y-%m-%d"),
-                                        "time_lesson": time_val,
-                                        "name_discipline": name_discipline,
-                                        "name_teacher": name_teacher,
-                                        "cabinet_number": cabinet_number
-                                    })
+                                
 
         return schedules
 
