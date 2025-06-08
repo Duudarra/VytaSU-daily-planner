@@ -348,10 +348,10 @@ async def delete_old_schedule(before: date, session: AsyncSession = Depends(get_
 @app.on_event("startup")
 async def startup_event():
     logger.info("Запуск приложения и планировщика")
-    # Запуск парсера в фоновом режиме
-    #logger.info("Запуск парсера в фоновом режиме при старте сервера")
-    #asyncio.create_task(parser_main())
-    # Настройка ежедневного парсинга
+    #Запуск парсера в фоновом режиме
+    logger.info("Запуск парсера в фоновом режиме при старте сервера")
+    asyncio.create_task(parser_main())
+    #Настройка ежедневного парсинга
     scheduler.add_job(
         parser_main,
         trigger=CronTrigger(hour=6, minute=0, timezone="Europe/Moscow"),
