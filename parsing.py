@@ -405,8 +405,9 @@ async def download_vk_file(url, filename):
 
 async def parse_vk_schedule_async():
     try:
-        logger.info("Начало парсинга расписания колледжа из VK (HTML)")
-        url = "https://vk.com/docs-85060840"
+        logger.info("Начало парсинга расписания колледжа из VK (через m.vk.com)")
+
+        url = "https://m.vk.com/kollegevyatsu"
         headers = {
             "User-Agent": "Mozilla/5.0"
         }
@@ -414,8 +415,9 @@ async def parse_vk_schedule_async():
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(url) as response:
                 if response.status != 200:
-                    logger.error(f"Ошибка при загрузке страницы документов ВК: {response.status}")
+                    logger.error(f"Ошибка загрузки мобильной версии группы: {response.status}")
                     return
+
                 html = await response.text()
 
         soup = BeautifulSoup(html, "html.parser")
@@ -424,25 +426,25 @@ async def parse_vk_schedule_async():
         found_files = []
         for link in links:
             href = link["href"]
-            if any(href.endswith(ext) for ext in [".xlsx", ".xls"]) and "doc" in href:
-                found_files.append(href)
+            if any(ext in href for ext in [".xlsx", ".xls"]) and "doc" in href:
+                file_url = f"https://m.vk.com{href}" if href.startswith("/doc") else href
+                found_files.append(file_url)
 
         if not found_files:
             logger.info("Не найдено подходящих файлов для парсинга.")
             return
 
-        for href in found_files:
-            file_name = href.split("/")[-1]
-            file_url = href if href.startswith("https") else f"https://vk.com{href}"
-
+        for file_url in found_files:
+            file_name = file_url.split("/")[-1].split("?")[0]
             logger.info(f"Найден файл: {file_name}")
+
             downloaded_file = await download_vk_file(file_url, file_name)
 
             try:
                 schedules = await parse_schedule_structured(downloaded_file, file_name)
                 logger.info(f"Обработано {len(schedules)} записей из {file_name}")
 
-                for entry in schedules[:5]:  # Показываем только первые 5 записей
+                for entry in schedules[:5]:
                     logger.info(
                         f"[ПРОВЕРКА ВК РАСПИСАНИЯ] {entry['date']} | {entry['time_lesson']} | "
                         f"{entry['name_group']} | {entry['name_discipline']} | "
@@ -460,6 +462,7 @@ async def parse_vk_schedule_async():
                     )
 
                 logger.info(f"РАСПИСАНИЕ из {file_name} сохранено в базу данных!")
+
             finally:
                 if os.path.exists(downloaded_file):
                     os.remove(downloaded_file)
