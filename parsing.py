@@ -13,6 +13,12 @@ import aiohttp
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 from dbrequests import delete_outdated_schedules, update_schedule
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+import aiofiles
 
 # Настройка логирования в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -405,30 +411,25 @@ async def download_vk_file(url, filename):
 
 async def parse_vk_schedule_async():
     try:
-        logger.info("Начало парсинга расписания колледжа из VK (через m.vk.com)")
+        logger.info("Начало парсинга расписания колледжа из VK (через Selenium)")
 
-        url = "https://m.vk.com/kollegevyatsu"
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")  # Без GUI
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
 
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(url) as response:
-                if response.status != 200:
-                    logger.error(f"Ошибка загрузки мобильной версии группы: {response.status}")
-                    return
+        driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+        driver.get("https://vk.com/kollegevyatsu")
 
-                html = await response.text()
+        time.sleep(5)  # Даём странице загрузиться
 
-        soup = BeautifulSoup(html, "html.parser")
+        docs = driver.find_elements(By.CSS_SELECTOR, "a.page_doc_title")
 
         found_files = []
-        # Ищем ссылки в блоках документов
-        for doc_block in soup.select("div.ai_doc a[href]"):
-            href = doc_block["href"]
-            if any(href.endswith(ext) for ext in [".xlsx", ".xls"]):
-                file_url = f"https://m.vk.com{href}" if href.startswith("/doc") else href
-                found_files.append(file_url)
+        for doc in docs:
+            href = doc.get_attribute("href")
+            if href and (href.endswith(".xlsx") or href.endswith(".xls")):
+                found_files.append(href)
 
         if not found_files:
             logger.info("Не найдено подходящих файлов для парсинга.")
@@ -438,10 +439,27 @@ async def parse_vk_schedule_async():
             file_name = file_url.split("/")[-1].split("?")[0]
             logger.info(f"Найден файл: {file_name}")
 
-            downloaded_file = await download_vk_file(file_url, file_name)
+            # Скачиваем файл вручную, так как requests не работает с авторизованными ссылками
+            driver.get(file_url)
+            time.sleep(5)
+
+            # Получаем финальную ссылку на файл (после редиректа)
+            final_url = driver.current_url
+            logger.info(f"Финальный URL: {final_url}")
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(final_url) as response:
+                    if response.status != 200:
+                        logger.warning(f"Не удалось скачать файл: {final_url}")
+                        continue
+
+                    content = await response.read()
+                    temp_path = f"/tmp/{file_name}"
+                    async with aiofiles.open(temp_path, 'wb') as f:
+                        await f.write(content)
 
             try:
-                schedules = await parse_schedule_structured(downloaded_file, file_name)
+                schedules = await parse_schedule_structured(temp_path, file_name)
                 logger.info(f"Обработано {len(schedules)} записей из {file_name}")
 
                 for entry in schedules[:5]:
@@ -464,14 +482,15 @@ async def parse_vk_schedule_async():
                 logger.info(f"РАСПИСАНИЕ из {file_name} сохранено в базу данных!")
 
             finally:
-                if os.path.exists(downloaded_file):
-                    os.remove(downloaded_file)
-                    logger.info(f"Удален временный файл {downloaded_file}")
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    logger.info(f"Удален временный файл {temp_path}")
 
+        driver.quit()
         logger.info("Парсинг расписания колледжа из VK завершен")
 
     except Exception as e:
-        logger.error(f"Ошибка при парсинге VK: {e}")
+        logger.error(f"Ошибка при парсинге VK через Selenium: {e}")
         logger.error(traceback.format_exc())
 
 
