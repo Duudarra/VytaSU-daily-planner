@@ -7,7 +7,6 @@ import asyncio
 import logging
 import traceback
 import tempfile
-import vk_api
 import pandas as pd
 import re
 from bs4 import BeautifulSoup
@@ -34,8 +33,7 @@ user_agent = {
 url_site = "https://www.vyatsu.ru/studentu-1/spravochnaya-informatsiya/zanyatost-auditoriy.html"
 url_teacher_site = "https://www.vyatsu.ru/studentu-1/spravochnaya-informatsiya/teacher.html"
 
-VK_TOKEN = "vk1.a.DAvuPJuM2f1EkXcwvJedXxGVXYemQ-1G_hgY-eH7gMbvg_HNrniL-hmyZBN4pDoEsELossWJSxvgqL3YV7y9WPIE3AkiSa-O_FGCBxd-OhPOaynH1emEStnj9eFU5rQMF0LTi29-unpouzOa-fEJ54blDlSwWxYS50c7WHey2If6pTDV0XIpQMyJHHW8RR_79YNLIyrn5vIral8aNd403A"
-GROUP_ID = "-85060840"
+VK_GROUP_URL = "https://vk.com/kollegevyatsu"
 
 async def get_content(url):
     logger.info(f"Запрос контента с {url}")
@@ -400,63 +398,53 @@ async def download_vk_file(url, filename):
 
 async def parse_vk_schedule_async():
     try:
-        logger.info("Обращение к VK API напрямую через requests")
-        url = f"https://api.vk.com/method/wall.get?owner_id={GROUP_ID}&count=50&access_token={VK_TOKEN}&v=5.131"
-        response = requests.get(url, headers=user_agent)
+        logger.info("Начало парсинга расписания колледжа из VK (HTML)")
+        response = requests.get(VK_GROUP_URL, headers=user_agent)
         response.raise_for_status()
 
-        data = response.json()
-        if "error" in data:
-            raise Exception(f"VK API error: {data['error']['error_msg']}")
+        soup = BeautifulSoup(response.text, "html.parser")
+        links = soup.find_all("a", href=True)
 
-        items = data["response"]["items"]
-        for post in items:
-            text = post.get("text", "").lower()
-            if "расписание" not in text:
-                continue
+        found_files = 0
+        for link in links:
+            href = link["href"]
+            if any(ext in href for ext in [".xlsx", ".xls", ".docx"]):
+                file_url = href
+                if file_url.startswith("/"):
+                    file_url = "https://vk.com" + file_url
 
-            for attachment in post.get("attachments", []):
-                if attachment["type"] == "doc":
-                    doc = attachment["doc"]
-                    if doc["ext"] == "xlsx":
-                        file_url = doc["url"]
-                        file_name = doc["title"]
+                file_name = file_url.split("/")[-1]
+                logger.info(f"Найден файл: {file_name}")
 
-                        logger.info(f"Найден файл: {file_name}")
-                        downloaded_file = await download_vk_file(file_url, file_name)
+                downloaded_file = await download_vk_file(file_url, file_name)
 
-                        try:
-                            schedules = await parse_schedule_structured(downloaded_file, file_name)
-                            logger.info(f"Обработано {len(schedules)} записей из {file_name}")
+                if file_name.endswith(".xlsx"):
+                    schedules = await parse_schedule_structured(downloaded_file, file_name)
+                    logger.info(f"Обработано {len(schedules)} записей из {file_name}")
+                    for entry in schedules:
+                        await update_schedule(
+                            entry["date"],
+                            entry["time_lesson"],
+                            entry["cabinet_number"],
+                            [entry["name_group"]],
+                            [entry["name_teacher"]],
+                            [entry["name_discipline"]],
+                        )
+                    logger.info(f"РАСПИСАНИЕ из {file_name} сохранено в базу данных!")
+                elif file_name.endswith(".docx"):
+                    logger.info(f"Файл {file_name} — формат DOCX (сессия?), пока не обрабатывается.")
+                else:
+                    logger.info(f"Файл {file_name} — неподдерживаемый формат.")
 
-                            for entry in schedules[:5]:
-                                logger.info(
-                                    f"[ПРОВЕРКА ВК] {entry['date']} | {entry['time_lesson']} | "
-                                    f"{entry['name_group']} | {entry['name_discipline']} | "
-                                    f"{entry['name_teacher']} | {entry['cabinet_number']}"
-                                )
+                os.remove(downloaded_file)
+                found_files += 1
 
-                            for entry in schedules:
-                                await update_schedule(
-                                    entry["date"],
-                                    entry["time_lesson"],
-                                    entry["cabinet_number"],
-                                    [entry["name_group"]],
-                                    [entry["name_teacher"]],
-                                    [entry["name_discipline"]],
-                                )
-
-                            logger.info(f"Файл {file_name} успешно сохранён в базу данных")
-
-                        finally:
-                            if os.path.exists(downloaded_file):
-                                os.remove(downloaded_file)
-                                logger.info(f"Удален временный файл {downloaded_file}")
-
+        if found_files == 0:
+            logger.info("Не найдено подходящих файлов для парсинга.")
+        logger.info("Парсинг расписания колледжа из VK завершен")
     except Exception as e:
-        logger.error(f"Ошибка при прямом парсинге VK: {e}")
+        logger.error(f"Ошибка при парсинге VK: {e}")
         logger.error(traceback.format_exc())
-
 
 async def parse_schedule_structured(file_path, file_name):
     try:
