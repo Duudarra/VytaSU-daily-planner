@@ -9,6 +9,7 @@ import traceback
 import tempfile
 import pandas as pd
 import re
+import aiohttp
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 from dbrequests import delete_outdated_schedules, update_schedule
@@ -389,59 +390,83 @@ async def parsing_teacher_url(url: str, department: str) -> None:
         logger.error(traceback.format_exc())
 
 async def download_vk_file(url, filename):
-    response = requests.get(url)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
-        temp_file.write(response.content)
-        temp_path = temp_file.name
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                raise Exception(f"Ошибка при скачивании {url}: статус {resp.status}")
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
+                content = await resp.read()
+                temp_file.write(content)
+                temp_path = temp_file.name
+
     logger.info(f"Скачан файл {filename} в {temp_path}")
     return temp_path
 
 async def parse_vk_schedule_async():
     try:
         logger.info("Начало парсинга расписания колледжа из VK (HTML)")
-        response = requests.get(VK_GROUP_URL, headers=user_agent)
-        response.raise_for_status()
+        url = "https://vk.com/docs-85060840"
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    logger.error(f"Ошибка при загрузке страницы документов ВК: {response.status}")
+                    return
+                html = await response.text()
+
+        soup = BeautifulSoup(html, "html.parser")
         links = soup.find_all("a", href=True)
 
-        found_files = 0
+        found_files = []
         for link in links:
             href = link["href"]
-            if any(ext in href for ext in [".xlsx", ".xls", ".docx"]):
-                file_url = href
-                if file_url.startswith("/"):
-                    file_url = "https://vk.com" + file_url
+            if any(href.endswith(ext) for ext in [".xlsx", ".xls"]) and "doc" in href:
+                found_files.append(href)
 
-                file_name = file_url.split("/")[-1]
-                logger.info(f"Найден файл: {file_name}")
-
-                downloaded_file = await download_vk_file(file_url, file_name)
-
-                if file_name.endswith(".xlsx"):
-                    schedules = await parse_schedule_structured(downloaded_file, file_name)
-                    logger.info(f"Обработано {len(schedules)} записей из {file_name}")
-                    for entry in schedules:
-                        await update_schedule(
-                            entry["date"],
-                            entry["time_lesson"],
-                            entry["cabinet_number"],
-                            [entry["name_group"]],
-                            [entry["name_teacher"]],
-                            [entry["name_discipline"]],
-                        )
-                    logger.info(f"РАСПИСАНИЕ из {file_name} сохранено в базу данных!")
-                elif file_name.endswith(".docx"):
-                    logger.info(f"Файл {file_name} — формат DOCX (сессия?), пока не обрабатывается.")
-                else:
-                    logger.info(f"Файл {file_name} — неподдерживаемый формат.")
-
-                os.remove(downloaded_file)
-                found_files += 1
-
-        if found_files == 0:
+        if not found_files:
             logger.info("Не найдено подходящих файлов для парсинга.")
+            return
+
+        for href in found_files:
+            file_name = href.split("/")[-1]
+            file_url = href if href.startswith("https") else f"https://vk.com{href}"
+
+            logger.info(f"Найден файл: {file_name}")
+            downloaded_file = await download_vk_file(file_url, file_name)
+
+            try:
+                schedules = await parse_schedule_structured(downloaded_file, file_name)
+                logger.info(f"Обработано {len(schedules)} записей из {file_name}")
+
+                for entry in schedules[:5]:  # Показываем только первые 5 записей
+                    logger.info(
+                        f"[ПРОВЕРКА ВК РАСПИСАНИЯ] {entry['date']} | {entry['time_lesson']} | "
+                        f"{entry['name_group']} | {entry['name_discipline']} | "
+                        f"{entry['name_teacher']} | {entry['cabinet_number']}"
+                    )
+
+                for entry in schedules:
+                    await update_schedule(
+                        entry["date"],
+                        entry["time_lesson"],
+                        entry["cabinet_number"],
+                        [entry["name_group"]],
+                        [entry["name_teacher"]],
+                        [entry["name_discipline"]],
+                    )
+
+                logger.info(f"РАСПИСАНИЕ из {file_name} сохранено в базу данных!")
+            finally:
+                if os.path.exists(downloaded_file):
+                    os.remove(downloaded_file)
+                    logger.info(f"Удален временный файл {downloaded_file}")
+
         logger.info("Парсинг расписания колледжа из VK завершен")
+
     except Exception as e:
         logger.error(f"Ошибка при парсинге VK: {e}")
         logger.error(traceback.format_exc())
