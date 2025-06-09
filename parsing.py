@@ -35,7 +35,7 @@ user_agent = {
 url_site = "https://www.vyatsu.ru/studentu-1/spravochnaya-informatsiya/zanyatost-auditoriy.html"
 url_teacher_site = "https://www.vyatsu.ru/studentu-1/spravochnaya-informatsiya/teacher.html"
 
-VK_TOKEN = "vk1.a.sw3UXjohjqOABV1a8Q3aaUGMxc66BUaGDkAbKjHbSZEUyKXCPcvbWfBC4O1RGWVQFTdO119kOmg34JTwjHWVRJCoo1sytSKxMbcimS3Awcfy5D64WZx_V0OWGp1y1aMLZDs68Ph9jOOZy0rzyiM_aVd4S6FMPaVkn1L30eAvzwJQUZFdJucznRR0a8K-8mnSrCTLtLu3oO3Jl86RUA8s3w"
+VK_TOKEN = "vk1.a.DAvuPJuM2f1EkXcwvJedXxGVXYemQ-1G_hgY-eH7gMbvg_HNrniL-hmyZBN4pDoEsELossWJSxvgqL3YV7y9WPIE3AkiSa-O_FGCBxd-OhPOaynH1emEStnj9eFU5rQMF0LTi29-unpouzOa-fEJ54blDlSwWxYS50c7WHey2If6pTDV0XIpQMyJHHW8RR_79YNLIyrn5vIral8aNd403A"
 GROUP_ID = "-85060840"
 
 async def get_content(url):
