@@ -12,6 +12,9 @@ from apscheduler.triggers.cron import CronTrigger
 from pars import main as parser_main
 import asyncio
 from security import verify_password, create_access_token, decode_access_token
+from fastapi import Request
+from fastapi.responses import PlainTextResponse
+
 
 # Настройка логирования в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -54,6 +57,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
             headers={"WWW-Authenticate": "Bearer"},
         )
     return schemas.UserOut.from_orm(user)
+
+
+@app.get("/auth-callback/")
+async def auth_callback(request: Request):
+    return PlainTextResponse(f"URL: {request.url}")
 
 @app.post(
     "/tasks/",

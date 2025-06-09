@@ -12,7 +12,6 @@ import pandas as pd
 import re
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
-
 from dbrequests import delete_outdated_schedules, update_schedule
 
 # Настройка логирования в stdout
