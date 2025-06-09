@@ -421,12 +421,12 @@ async def parse_vk_schedule_async():
                 html = await response.text()
 
         soup = BeautifulSoup(html, "html.parser")
-        links = soup.find_all("a", href=True)
 
         found_files = []
-        for link in links:
-            href = link["href"]
-            if any(ext in href for ext in [".xlsx", ".xls"]) and "doc" in href:
+        # Ищем ссылки в блоках документов
+        for doc_block in soup.select("div.ai_doc a[href]"):
+            href = doc_block["href"]
+            if any(href.endswith(ext) for ext in [".xlsx", ".xls"]):
                 file_url = f"https://m.vk.com{href}" if href.startswith("/doc") else href
                 found_files.append(file_url)
 
@@ -473,6 +473,7 @@ async def parse_vk_schedule_async():
     except Exception as e:
         logger.error(f"Ошибка при парсинге VK: {e}")
         logger.error(traceback.format_exc())
+
 
 async def parse_schedule_structured(file_path, file_name):
     try:
