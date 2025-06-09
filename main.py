@@ -63,6 +63,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
 async def auth_callback(request: Request):
     return PlainTextResponse(f"URL: {request.url}")
 
+@app.get("/print-url")
+async def print_url(request: Request):
+    return {"url": str(request.url)}
+
 @app.post(
     "/tasks/",
     response_model=schemas.TaskOut,
