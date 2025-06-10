@@ -14,6 +14,14 @@ import asyncio
 from security import verify_password, create_access_token, decode_access_token
 from fastapi import Request
 from fastapi.responses import PlainTextResponse
+import subprocess
+
+async def install_playwright_browsers():
+    try:
+        subprocess.run(["playwright", "install", "--with-deps"], check=True)
+        print("Playwright browsers installed")
+    except Exception as e:
+        print(f"Ошибка при установке Playwright: {e}")
 
 
 # Настройка логирования в stdout
@@ -417,3 +425,4 @@ async def run_parser():
     logger.info("Ручной запуск парсера")
     await parser_main()
     return {"message": "Парсер запущен"}
+asyncio.run(install_playwright_browsers())
