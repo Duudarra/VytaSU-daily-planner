@@ -418,7 +418,7 @@ async def parse_vk_schedule_async():
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
 
-        driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         driver.get("https://vk.com/kollegevyatsu")
 
         time.sleep(5)  # Даём странице загрузиться
