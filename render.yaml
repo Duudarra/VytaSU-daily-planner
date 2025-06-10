@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: vytasu-daily-planner
+    env: docker
+    plan: free
+    repo: https://github.com/Duudarra/VytaSU-daily-planner
+    branch: main
+    dockerfilePath: ./Dockerfile
