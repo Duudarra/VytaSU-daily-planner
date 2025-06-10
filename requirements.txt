@@ -17,3 +17,4 @@ aiohttp>=3.8.6
 aiofiles>=23.2.1
 webdriver-manager>=4.0.1
 aiohttp
+Service
