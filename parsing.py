@@ -13,14 +13,15 @@ import aiohttp
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 from dbrequests import delete_outdated_schedules, update_schedule
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
 from playwright.async_api import async_playwright
-import time
 import aiofiles
+import subprocess
+
+def ensure_playwright_browsers_installed():
+    pw_cache_path = "/opt/render/.cache/ms-playwright"
+    if not os.path.exists(pw_cache_path) or not os.listdir(pw_cache_path):
+        subprocess.run(["playwright", "install", "--with-deps"], check=True)
+
 
 # Настройка логирования в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -597,6 +598,7 @@ async def start_parsing():
 
         logger.info("Начало парсинга расписания колледжа из VK")
         await parse_vk_schedule_async()
+        await ensure_playwright_browsers_installed()
         logger.info("Парсинг расписания колледжа из VK завершен")
     except Exception as e:
         logger.error(f"Ошибка парсинга: {e}")
