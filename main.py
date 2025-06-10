@@ -424,5 +424,5 @@ async def shutdown_event():
 async def run_parser():
     logger.info("Ручной запуск парсера")
     await parser_main()
+    install_playwright_browsers()
     return {"message": "Парсер запущен"}
-asyncio.run(install_playwright_browsers())
