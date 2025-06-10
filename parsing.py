@@ -18,6 +18,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+from playwright.async_api import async_playwright
 import time
 import aiofiles
 
@@ -411,65 +412,44 @@ async def download_vk_file(url, filename):
     return temp_path
 
 async def parse_vk_schedule_async():
-    try:
-        logger.info("Начало парсинга расписания колледжа из VK (через Selenium)")
+    logger.info("Начало парсинга расписания колледжа из VK (через Playwright)")
 
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")  # Без GUI
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto("https://vk.com/docs-85060840", wait_until="domcontentloaded")
 
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        driver.get("https://vk.com/kollegevyatsu")
+        # Ищем ссылки на Excel-документы
+        links = await page.query_selector_all("a[href$='.xlsx'], a[href$='.xls']")
 
-        time.sleep(5)  # Даём странице загрузиться
-
-        docs = driver.find_elements(By.CSS_SELECTOR, "a.page_doc_title")
-
-        found_files = []
-        for doc in docs:
-            href = doc.get_attribute("href")
-            if href and (href.endswith(".xlsx") or href.endswith(".xls")):
-                found_files.append(href)
-
-        if not found_files:
+        if not links:
             logger.info("Не найдено подходящих файлов для парсинга.")
+            await browser.close()
             return
 
-        for file_url in found_files:
-            file_name = file_url.split("/")[-1].split("?")[0]
-            logger.info(f"Найден файл: {file_name}")
+        for link in links:
+            href = await link.get_attribute("href")
+            if not href:
+                continue
 
-            # Скачиваем файл вручную, так как requests не работает с авторизованными ссылками
-            driver.get(file_url)
-            time.sleep(5)
+            file_name = href.split("/")[-1]
+            file_url = f"https://vk.com{href}" if href.startswith("/") else href
 
-            # Получаем финальную ссылку на файл (после редиректа)
-            final_url = driver.current_url
-            logger.info(f"Финальный URL: {final_url}")
+            logger.info(f"Найден файл: {file_name} ({file_url})")
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(final_url) as response:
+                async with session.get(file_url) as response:
                     if response.status != 200:
-                        logger.warning(f"Не удалось скачать файл: {final_url}")
+                        logger.warning(f"Ошибка загрузки {file_url}")
                         continue
 
                     content = await response.read()
                     temp_path = f"/tmp/{file_name}"
-                    async with aiofiles.open(temp_path, 'wb') as f:
+                    async with aiofiles.open(temp_path, "wb") as f:
                         await f.write(content)
 
             try:
                 schedules = await parse_schedule_structured(temp_path, file_name)
-                logger.info(f"Обработано {len(schedules)} записей из {file_name}")
-
-                for entry in schedules[:5]:
-                    logger.info(
-                        f"[ПРОВЕРКА ВК РАСПИСАНИЯ] {entry['date']} | {entry['time_lesson']} | "
-                        f"{entry['name_group']} | {entry['name_discipline']} | "
-                        f"{entry['name_teacher']} | {entry['cabinet_number']}"
-                    )
-
                 for entry in schedules:
                     await update_schedule(
                         entry["date"],
@@ -479,20 +459,14 @@ async def parse_vk_schedule_async():
                         [entry["name_teacher"]],
                         [entry["name_discipline"]],
                     )
-
                 logger.info(f"РАСПИСАНИЕ из {file_name} сохранено в базу данных!")
-
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
-                    logger.info(f"Удален временный файл {temp_path}")
 
-        driver.quit()
+        await browser.close()
         logger.info("Парсинг расписания колледжа из VK завершен")
 
-    except Exception as e:
-        logger.error(f"Ошибка при парсинге VK через Selenium: {e}")
-        logger.error(traceback.format_exc())
 
 
 async def parse_schedule_structured(file_path, file_name):
