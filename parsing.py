@@ -589,12 +589,19 @@ async def parse_schedule_structured(file_path, file_name):
 async def start_parsing():
     await delete_outdated_schedules()
     try:
-      ##  logger.info("Начало парсинга расписания преподавателей")
-      ##  response = await get_content(url_teacher_site)
-      ##  teacher_urls = await get_teacher_urls(response)
-      ##  for url, teacher_name, department in teacher_urls:  # Обновлено
-      ##      await parsing_teacher_url(url, teacher_name, department)
-       ## logger.info("Парсинг расписания преподавателей завершен")
+        logger.info("Начало парсинга расписания преподавателей")
+        response = await get_content(url_teacher_site)
+        teacher_urls = await get_teacher_urls(response)
+        for url, teacher_name, department in teacher_urls:  # Обновлено
+            await parsing_teacher_url(url, teacher_name, department)
+        logger.info("Парсинг расписания преподавателей завершен")
+
+        logger.info("Начало парсинга расписания университета (аудитории)")
+        response = await get_content(url_site)
+        urls = await get_urls(response)
+        for url in urls:
+            await parsing_url(url)
+        logger.info("Парсинг расписания университета (аудитории) завершен")
 
         logger.info("Начало парсинга расписания колледжа из VK")
         await parse_vk_schedule_async()
